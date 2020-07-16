@@ -1,0 +1,10 @@
+{
+    "python.pythonPath": "/Users/paveltuchin/Library/Caches/pypoetry/virtualenvs/tiny-pacs-py3.7/bin/python",
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "restructuredtext.confPath": ""
+}

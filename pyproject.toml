@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "tiny_pacs"
+version = "0.1.0"
+description = ""
+authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
+license = "MIT"
+keywords = ["medical", "dicom", "network"]
+
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries"
+]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+pydicom = "^1.4"
+pynetdicom2 = "^0.9.0"
+peewee = "^3.13"
+PyYAML = "^5.3"
+
+[tool.poetry.dev-dependencies]
+pytest = "^3.0"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
