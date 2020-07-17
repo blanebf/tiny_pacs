@@ -5,12 +5,22 @@ import logging
 
 
 class DefaultChannels(enum.Enum):
+    """Default events. Every component probably should support them"""
+
+    #: Fired when server is starting
     ON_START = 'on-start'
+
+    #: Fired when server has started
     ON_STARTED = 'on-started'
+
+    #: Fired when server is exiting
     ON_EXIT = 'on-exit'
 
 
 class NoListenersError(Exception):
+    """Raised when there are no listeners for requested event.
+
+    This error is not raised when using broadcast method."""
     pass
 
 
@@ -40,6 +50,12 @@ class EventBus:
         if priority is None:
             priority = getattr(callback, 'priority', 50)
         self._priorities[(channel, callback)] = priority
+
+    def unsubscribe(self, channel, callback):
+        listeners = self.listeners.get(channel)
+        if listeners and callback in listeners:
+            listeners.discard(callback)
+            del self._priorities[(channel, callback)]
 
     def broadcast(self, channel: str, *args, **kwargs):
         results = []

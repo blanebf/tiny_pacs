@@ -915,7 +915,7 @@ def _build_filter(query, attr, vr, elem):
     raise ValueError(f'Unsupported VR: {vr}')
 
 
-def _filter_upper_level(model, elements):
+def _filter_upper_level(model, elements: list):
     """Build filter for upper C-FIND level
 
     :param model: peewee model
@@ -931,17 +931,18 @@ def _filter_upper_level(model, elements):
         yield elem.tag, attr, vr, elem, attr_name
 
 
-def _encode_response(instance, response_attrs, encoding):
+def _encode_response(instance, response_attrs: list, encoding: str):
     """Creates a C-FIND response dataset
 
-    :param instance: [description]
-    :type instance: [type]
-    :param response_attrs: [description]
-    :type response_attrs: [type]
-    :param encoding: [description]
-    :type encoding: [type]
-    :return: [description]
-    :rtype: [type]
+    :param instance: database model instance
+    :type instance: peewee.Model
+    :param response_attrs: list of response attributes (tag, attribute name in
+                           the database model and VR)
+    :type response_attrs: list
+    :param encoding: response encoding
+    :type encoding: str
+    :return: C-FIND-RSP dataset
+    :rtype: pydicom.Dataset
     """
     rsp = pydicom.Dataset()
     rsp.SpecificCharacterSet = encoding
@@ -959,7 +960,7 @@ def _encode_response(instance, response_attrs, encoding):
             rsp.add_new(tag, vr, attr)
     return rsp
 
-def _text_filter(query: peewee.Query, attr, value):
+def _text_filter(query: peewee.Query, attr, value: str):
     if isinstance(value, list):
         return query.where(attr << value)
     value = value.replace('?', '_')
