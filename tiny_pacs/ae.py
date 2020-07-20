@@ -5,6 +5,7 @@ import logging
 
 import pydicom
 
+from pynetdicom2 import asceprovider
 from pynetdicom2 import applicationentity
 from pynetdicom2 import sopclass
 from pynetdicom2 import exceptions
@@ -20,6 +21,7 @@ class AEChannels(enum.Enum):
     STORE = 'on-receive-store'
     FIND = 'on-receive-find'
     MOVE = 'on-receive-move'
+    GET = 'on-receive-get'
     COMMITMENT = 'on-receive-commitment'
     ON_GET_FILE = 'on-store-get-file'
     MAIN_AET = 'get-main-aet'
@@ -133,6 +135,31 @@ class AE(applicationentity.AE):
 
         datasets = chain.from_iterable(results)
         return remote_ae, datasets
+
+    def on_receive_get(self, context: asceprovider.PContextDef,
+                       ds: pydicom.Dataset):
+        """Handling of the C-GET request
+
+        :param context: presentation context
+        :type context: asceprovider.PContextDef
+        :param ds: C-GET request dataset
+        :type ds: pydicom.Dataset
+        :raises exceptions.EventHandlingError: raised in case there is an error
+                                               while handling C-GET request
+        :return: response datasets (file names or pydicom.Dataset(s))
+        """
+        self.log.info('Received C-GET %r', context)
+        if self.dump_ds:
+            self.log.debug('C-GET dataset %r', ds)
+
+        try:
+            results = self.bus.broadcast(AEChannels.GET, context, ds)
+        except Exception as e:
+            msg = f'C-GET handling failed {e}'
+            self.log.exception(msg)
+            raise exceptions.EventHandlingError(msg)
+        datasets = chain.from_iterable(results)
+        return datasets
 
     def on_commitment_request(self, remote_ae, uids):
         self.log.info('Received Storage Commitment request for %s', remote_ae)

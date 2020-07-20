@@ -12,7 +12,18 @@ from pynetdicom2 import dsutils
 
 
 @sopclass.sop_classes(sopclass.MOVE_SOP_CLASSES)
-def qr_move_scp(asce, ctx, msg):
+def qr_move_scp(asce: asceprovider.AssociationAcceptor,
+                ctx: asceprovider.PContextDef,
+                msg: dimsemessages.CMoveRQMessage):
+    """Query/Retrieve C-MOVE service implementation.
+
+    :param asce: active association
+    :type asce: asceprovider.AssociationAcceptor
+    :param ctx: presentation context
+    :type ctx: asceprovider.PContextDef
+    :param msg: incoming message
+    :type msg: dimsemessages.CMoveRQMessage
+    """
     ds = dsutils.decode(msg.data_set, ctx.supported_ts.is_implicit_VR,
                         ctx.supported_ts.is_little_endian)
 
@@ -28,10 +39,13 @@ def qr_move_scp(asce, ctx, msg):
     nop = len(gen)
     if not nop:
         # nothing to move
-        _send_response(asce, ctx, msg, 0, 0, 0, 0)
+        _set_ops(rsp, 0, 0, 0, 0)
+        rsp.status = int(statuses.SUCCESS)
+        asce.send(rsp, ctx.id)
+        return
 
     contexts = {(sop_class, ts) for sop_class, ts, _ in gen}
-    datasets = (d for _, _, d in gen)
+    datasets = ((sop_class, d) for sop_class, _, d in gen)
 
     aet = asce.ae.local_ae['aet']
 
@@ -47,9 +61,10 @@ def qr_move_scp(asce, ctx, msg):
         warning = 0
         completed = 0
         success = 0
-        for data_set in datasets:
+        rsp.status = int(statuses.C_MOVE_PENDING)
+        for sop_class, data_set in datasets:
             # request an association with destination send C-STORE
-            service = assoc.get_scu(data_set.SOPClassUID)
+            service = assoc.get_scu(sop_class)
             status = service(data_set, completed)
             if status.is_failure:
                 failed += 1
@@ -57,7 +72,6 @@ def qr_move_scp(asce, ctx, msg):
                 warning += 1
             else:
                 success +=1
-            rsp.status = int(statuses.C_MOVE_PENDING)
             rsp.num_of_remaining_sub_ops = nop - completed
             rsp.num_of_completed_sub_ops = success
             rsp.num_of_failed_sub_ops = failed
@@ -66,16 +80,75 @@ def qr_move_scp(asce, ctx, msg):
 
             # send response
             asce.send(rsp, ctx.id)
-        _send_response(asce, ctx, msg, nop, failed, warning, success)
+        _set_ops(rsp, completed, failed, warning, success)
+        rsp.status = int(statuses.SUCCESS)
+        asce.send(rsp, ctx.id)
 
 
-def _send_response(asce, ctx, msg, nop, failed, warning, completed):
-    rsp = dimsemessages.CMoveRSPMessage()
+@sopclass.sop_classes(sopclass.GET_SOP_CLASSES)
+def qr_get_scp(asce: asceprovider.AssociationAcceptor,
+               ctx: asceprovider.PContextDef, msg: dimsemessages.CGetRQMessage):
+    """Query/Retrieve C-GET service implementation.
+
+    :param asce: active association
+    :type asce: asceprovider.AssociationAcceptor
+    :param ctx: presentation context
+    :type ctx: asceprovider.PContextDef
+    :param msg: incoming message
+    :type msg: dimsemessages.CGetRQMessage
+    """
+    ds = dsutils.decode(msg.data_set, ctx.supported_ts.is_implicit_VR,
+                        ctx.supported_ts.is_little_endian)
+
+    # make response
+    rsp = dimsemessages.CGetRSPMessage()
     rsp.message_id_being_responded_to = msg.message_id
     rsp.sop_class_uid = msg.sop_class_uid
-    rsp.num_of_remaining_sub_ops = nop - completed
-    rsp.num_of_completed_sub_ops = completed
-    rsp.num_of_failed_sub_ops = failed
-    rsp.num_of_warning_sub_ops = warning
+    gen = asce.ae.on_receive_get(ctx, ds)
+
+    if not isinstance(gen, list):
+        gen = list(gen)
+
+    nop = len(gen)
+    if not nop:
+        # nothing to move
+        _set_ops(rsp, 0, 0, 0, 0)
+        rsp.status = int(statuses.SUCCESS)
+        asce.send(rsp, ctx.id)
+        return
+
+    datasets = ((sop_class, d) for sop_class, _, d in gen)
+
+    failed = 0
+    warning = 0
+    completed = 0
+    success = 0
+    rsp.status = int(statuses.C_GET_PENDING)
+    for sop_class, data_set in datasets:
+        service = asce.get_scu(sop_class)
+        status = service(data_set, completed)
+        if status.is_failure:
+            failed += 1
+        elif status.is_warning:
+            warning += 1
+        else:
+            success +=1
+        rsp.num_of_remaining_sub_ops = nop - completed
+        rsp.num_of_completed_sub_ops = success
+        rsp.num_of_failed_sub_ops = failed
+        rsp.num_of_warning_sub_ops = warning
+        completed += 1
+
+        # send response
+        asce.send(rsp, ctx.id)
+
+    _set_ops(rsp, completed, failed, warning, success)
     rsp.status = int(statuses.SUCCESS)
     asce.send(rsp, ctx.id)
+
+
+def _set_ops(msg, nop, failed, warning, completed):
+    msg.num_of_remaining_sub_ops = nop - completed
+    msg.num_of_completed_sub_ops = completed
+    msg.num_of_failed_sub_ops = failed
+    msg.num_of_warning_sub_ops = warning

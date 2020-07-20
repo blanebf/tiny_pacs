@@ -159,6 +159,23 @@ class PACS(component.Component):
         results = self.broadcast(storage.StorageChannels.ON_GET_FILES, instances)
         return list(chain.from_iterable(results))
 
+    def on_get(self, context, ds: pydicom.Dataset):
+        """Handling of incoming get request
+
+        :param context: presentation context
+        :type context: pynetdicom2.asceprovider.PContextDef
+        :param ds: incoming dataset
+        :type ds: pydicom.Dataset
+        :return: list of tuples: SOP Class UID, Transfer Syntax and either
+                 filename or dataset
+        :rtype: list
+        """
+        self.log_info('Handling get request (%r)', context)
+        instances = [uid for _, _, uid in self.c_move_get_instances(ds)]
+        self.log_debug('Getting instances: %r', instances)
+        results = self.broadcast(storage.StorageChannels.ON_GET_FILES, instances)
+        return list(chain.from_iterable(results))
+
     def on_commitment(self, uids: list):
         """Handling of incoming storage commitment request
 
