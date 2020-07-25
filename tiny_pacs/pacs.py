@@ -30,7 +30,7 @@ EXCLUDED_ATTRS = set([
 
 
 #: List of text VRs
-TEXT_VR = ['AE', 'CS', 'LO', 'LT', 'PN', 'SH', 'ST', 'UC', 'UR', 'UT']
+TEXT_VR = ['AE', 'CS', 'LO', 'LT', 'PN', 'SH', 'ST', 'UC', 'UR', 'UT', 'UI']
 
 
 class QRLevelRank(enum.Enum):
@@ -85,6 +85,7 @@ class PACS(component.Component):
         self.subscribe(ae.AEChannels.STORE, self.on_store)
         self.subscribe(ae.AEChannels.FIND, self.on_find)
         self.subscribe(ae.AEChannels.MOVE, self.on_move)
+        self.subscribe(ae.AEChannels.GET, self.on_get)
         self.subscribe(ae.AEChannels.COMMITMENT, self.on_commitment)
         self.subscribe(db.DBChannels.TABLES, self.tables)
 
@@ -407,7 +408,7 @@ class Patient(peewee.Model):
             response_attrs.append(
                 (0x00201202, 'number_of_patient_related_series', 'IS')
             )
-            joins.union([(Patient, Study), (Study, Series)])
+            joins.update([(Patient, Study), (Study, Series)])
         if 'NumberOfPatientRelatedInstances' in ds:
             select.append(
                 peewee.fn.Count(Instance.id)\
@@ -416,7 +417,7 @@ class Patient(peewee.Model):
             response_attrs.append(
                 (0x00201204, 'number_of_patient_related_instances', 'IS')
             )
-            joins.union([(Patient, Study), (Study, Series), (Series, Instance)])
+            joins.update([(Patient, Study), (Study, Series), (Series, Instance)])
 
         query = Patient.select(*select)
         for join in joins:
@@ -605,7 +606,7 @@ class Study(peewee.Model):
                 agg_fun(Instance.sop_class_uid, '\\').alias('sop_classes_in_study')
             )
             response_attrs.append((0x00080062, 'sop_classes_in_study', 'UI'))
-            joins.union([(Study, Series), (Series, Instance)])
+            joins.update([(Study, Series), (Series, Instance)])
         if 'NumberOfStudyRelatedSeries' in ds:
             select.append(
                 peewee.fn.Count(Series.id)\
@@ -619,7 +620,7 @@ class Study(peewee.Model):
                     .alias('number_of_study_related_instances')  # pylint: disable=no-member
             )
             response_attrs.append((0x00201204, 'number_of_study_related_instances', 'IS'))
-            joins.union([(Study, Series), (Series, Instance)])
+            joins.update([(Study, Series), (Series, Instance)])
 
         query = Study.select(*select)
 
@@ -634,6 +635,8 @@ class Study(peewee.Model):
             query = _build_filter(query, attr, vr, elem)
 
         encoding = getattr(ds, 'SpecificCharacterSet', 'ISO-IR 6')
+        if not query.count():
+            return []
         yield from (_encode_response(s, response_attrs, encoding) for s in query)
 
 
@@ -706,7 +709,7 @@ class Series(peewee.Model):
         patient_attrs = [e for e in ds if e.tag in Patient.mapping]
         skipped.update(e.tag for e in patient_attrs)
         if patient_attrs:
-            _upper_level_filters = _filter_upper_level(Patient, patient_attrs)
+            _upper_level_filters = list(_filter_upper_level(Patient, patient_attrs))
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
@@ -716,7 +719,7 @@ class Series(peewee.Model):
         study_attrs = [e for e in ds if e.tag in Study.mapping]
         skipped.update(e.tag for e in study_attrs)
         if study_attrs:
-            _upper_level_filters = _filter_upper_level(Study, study_attrs)
+            _upper_level_filters = list(_filter_upper_level(Study, study_attrs))
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
@@ -744,6 +747,9 @@ class Series(peewee.Model):
             query = _build_filter(query, attr, vr, elem)
 
         encoding = getattr(ds, 'SpecificCharacterSet', 'ISO-IR 6')
+        if not query.count():
+            return []
+
         yield from (_encode_response(s, response_attrs, encoding) for s in query)
 
 
@@ -753,6 +759,7 @@ class Instance(peewee.Model):
     Stores all relevant C-FIND attributes.
     """
     mapping = {
+        0x00020010: ('transfer_syntax_uid', 'UI'),
         0x00200013: ('instance_number', 'IS'),
         0x00080018: ('sop_instance_uid', 'UI'),
         0x00080016: ('sop_class_uid', 'UI'),
@@ -773,6 +780,9 @@ class Instance(peewee.Model):
 
     #: Container Identifier (0040, 0512) LO
     container_identifier = peewee.CharField(max_length=64, index=True, null=True)
+
+    # Transfer Syntax UID (0002, 0010) UI
+    transfer_syntax_uid = peewee.CharField(max_length=64, index=True, null=True)
 
     # Available Transfer Syntax UID (0008,3002)
     # Related General SOP Class UID (0008,001A)
@@ -795,12 +805,18 @@ class Instance(peewee.Model):
             instance_number = getattr(ds, 'InstanceNumber', None)
             sop_class_uid = getattr(ds, 'SOPClassUID', None)
             container_identifier = getattr(ds, 'ContainerIdentifier', None)
+            meta = getattr(ds, 'file_meta', None)
+            if meta:
+                transfer_syntax_uid = getattr(meta, 'TransferSyntaxUID')
+            else:
+                transfer_syntax_uid = None
             return Instance.create(
                 series=series,
                 sop_instance_uid=sop_instance_uid,
                 instance_number=instance_number,
                 sop_class_uid=sop_class_uid,
-                container_identifier=container_identifier
+                container_identifier=container_identifier,
+                transfer_syntax_uid=transfer_syntax_uid
             )
 
     @classmethod
@@ -823,7 +839,7 @@ class Instance(peewee.Model):
         patient_attrs = [e for e in ds if e.tag in Patient.mapping]
         skipped.update(e.tag for e in patient_attrs)
         if patient_attrs:
-            _upper_level_filters = _filter_upper_level(Patient, patient_attrs)
+            _upper_level_filters = list(_filter_upper_level(Patient, patient_attrs))
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
@@ -831,9 +847,9 @@ class Instance(peewee.Model):
             joins.update([(Instance, Series), (Series, Study), (Study, Patient)])
 
         study_attrs = [e for e in ds if e.tag in Study.mapping]
-        skipped.union(e.tag for e in study_attrs)
+        skipped.update(e.tag for e in study_attrs)
         if study_attrs:
-            _upper_level_filters = _filter_upper_level(Study, study_attrs)
+            _upper_level_filters = list(_filter_upper_level(Study, study_attrs))
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
@@ -841,9 +857,9 @@ class Instance(peewee.Model):
             joins.update([(Instance, Series), (Series, Study)])
 
         series_attrs = [e for e in ds if e.tag in Series.mapping]
-        skipped.union(e.tag for e in series_attrs)
+        skipped.update(e.tag for e in series_attrs)
         if series_attrs:
-            _upper_level_filters = _filter_upper_level(Series, series_attrs)
+            _upper_level_filters = list(_filter_upper_level(Series, series_attrs))
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
@@ -863,6 +879,9 @@ class Instance(peewee.Model):
             query = _build_filter(query, attr, vr, elem)
 
         encoding = getattr(ds, 'SpecificCharacterSet', 'ISO-IR 6')
+        if not query.count():
+            return []
+
         yield from (_encode_response(s, response_attrs, encoding) for s in query)
 
 

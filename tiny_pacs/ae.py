@@ -50,6 +50,7 @@ class AE(applicationentity.AE):
         self.add_scp(sopclass.verification_scp)
         self.add_scp(sopclass.qr_find_scp)
         self.add_scp(services.qr_move_scp)
+        self.add_scp(services.qr_get_scp)
         self.add_scp(sopclass.storage_scp)
         self.add_scp(sopclass.StorageCommitment())
         self.bus.subscribe(AEChannels.MAIN_AET, self.get_main_aet)
@@ -79,7 +80,7 @@ class AE(applicationentity.AE):
         self.log.info('Received C-STORE %r', context)
         if self.dump_ds:
             try:
-                ds = pydicom.dcmread(ds, stop_before_pixels=True)
+                _ds = pydicom.dcmread(ds, stop_before_pixels=True)
 
             except Exception:
                 self.log.error(
@@ -87,7 +88,8 @@ class AE(applicationentity.AE):
                 )
                 raise
             else:
-                self.log.debug('C-STORE dataset: %r', ds)
+                self.log.debug('C-STORE dataset: %r', _ds)
+            ds.seek(0)
 
         try:
             results = self.bus.broadcast(AEChannels.STORE, context, ds)

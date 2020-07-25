@@ -26,7 +26,7 @@ class StorageChannels(enum.Enum):
 
 class StorageFiles(peewee.Model):
     sop_instance_uid = peewee.CharField(max_length=64, unique=True)
-    sop_class_uid = peewee.CharField(max_length=64, unique=True)
+    sop_class_uid = peewee.CharField(max_length=64, index=True)
     transfer_syntax = peewee.CharField(max_length=64)
     file_name = peewee.TextField()
     added = peewee.DateTimeField(default=datetime.datetime.utcnow, index=True)

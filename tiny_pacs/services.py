@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import functools
 from itertools import count
 
 from pydicom import uid
@@ -6,6 +7,7 @@ from pydicom import uid
 from pynetdicom2 import asceprovider
 from pynetdicom2 import applicationentity
 from pynetdicom2 import dimsemessages
+from pynetdicom2 import exceptions
 from pynetdicom2 import sopclass
 from pynetdicom2 import statuses
 from pynetdicom2 import dsutils
@@ -117,15 +119,27 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
         asce.send(rsp, ctx.id)
         return
 
-    datasets = ((sop_class, d) for sop_class, _, d in gen)
+    datasets = ((sop_class, ts, d) for sop_class, ts, d in gen)
 
     failed = 0
     warning = 0
     completed = 0
     success = 0
     rsp.status = int(statuses.C_GET_PENDING)
-    for sop_class, data_set in datasets:
-        service = asce.get_scu(sop_class)
+    for sop_class, ts, data_set in datasets:
+        for _, context in asce.accepted_contexts.items():
+            if context.sop_class == sop_class and context.supported_ts == ts:
+                pc_id = context.id
+                ts = context.supported_ts
+                break
+        else:
+            msg = 'SOP Class UID {} or Transfer Syntax '\
+                  'is not supported {}'.format(sop_class, ts)
+            raise exceptions.NetDICOMError(msg)
+        service = functools.partial(
+            sopclass.storage_scu, asce,
+            asceprovider.PContextDef(pc_id, sop_class, ts)
+        )
         status = service(data_set, completed)
         if status.is_failure:
             failed += 1
