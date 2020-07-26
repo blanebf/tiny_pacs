@@ -401,7 +401,7 @@ class Patient(peewee.Model):
                     .alias('number_of_patient_related_studies')  # pylint: disable=no-member
                 )
             response_attrs.append(
-                (_tag, 'number_of_patient_related_studies', 'IS')
+                (_tag, 'number_of_patient_related_studies', 'IS', None)
             )
             joins.add((Patient, Study))
         if 'NumberOfPatientRelatedSeries' in ds:
@@ -412,7 +412,7 @@ class Patient(peewee.Model):
                     .alias('number_of_patient_related_series')  # pylint: disable=no-member
             )
             response_attrs.append(
-                (_tag, 'number_of_patient_related_series', 'IS')
+                (_tag, 'number_of_patient_related_series', 'IS', None)
             )
             joins.update([(Patient, Study), (Study, Series)])
         if 'NumberOfPatientRelatedInstances' in ds:
@@ -423,7 +423,7 @@ class Patient(peewee.Model):
                     .alias('number_of_patient_related_instances')  # pylint: disable=no-member
             )
             response_attrs.append(
-                (_tag, 'number_of_patient_related_instances', 'IS')
+                (_tag, 'number_of_patient_related_instances', 'IS', None)
             )
             joins.update([(Patient, Study), (Study, Series), (Series, Instance)])
 
@@ -597,7 +597,7 @@ class Study(peewee.Model):
             upper_level_filters.extend(_filter_upper_level(Patient, patient_attrs))
             for tag, attr, vr, _, attr_name in upper_level_filters:
                 select.append(attr)
-                response_attrs.append((tag, ('patient', attr_name), vr))
+                response_attrs.append((tag, ('patient', attr_name), vr, None))
             joins.add((Study, Patient))
 
         if 'ModalitiesInStudy' in ds:
@@ -608,7 +608,8 @@ class Study(peewee.Model):
             select.append(
                 agg_fun(Series.modality, '\\').alias('modalities_in_study')
             )
-            response_attrs.append((_tag, 'modalities_in_study', 'CS'))
+            func = lambda v: '\\'.join(set(v.split('\\'))) if v else v
+            response_attrs.append((_tag, 'modalities_in_study', 'CS', func))
             joins.add((Study, Series))
         if 'SOPClassesInStudy' in ds:
             _tag = Tag(0x0008, 0x0062)
@@ -617,7 +618,8 @@ class Study(peewee.Model):
             select.append(
                 agg_fun(Instance.sop_class_uid, '\\').alias('sop_classes_in_study')
             )
-            response_attrs.append((_tag, 'sop_classes_in_study', 'UI'))
+            func = lambda v: '\\'.join(set(v.split('\\'))) if v else v
+            response_attrs.append((_tag, 'sop_classes_in_study', 'UI', func))
             joins.update([(Study, Series), (Series, Instance)])
         if 'NumberOfStudyRelatedSeries' in ds:
             _tag = Tag(0x0020, 0x1206)
@@ -626,7 +628,9 @@ class Study(peewee.Model):
                 peewee.fn.Count(Series.id)\
                     .alias('number_of_study_related_series')  # pylint: disable=no-member
             )
-            response_attrs.append((_tag, 'number_of_study_related_series', 'IS'))
+            response_attrs.append(
+                (_tag, 'number_of_study_related_series', 'IS', None)
+            )
             joins.add((Study, Series))
         if 'NumberOfStudyRelatedInstances' in ds:
             _tag = Tag((0x0020, 0x1208))
@@ -635,7 +639,9 @@ class Study(peewee.Model):
                 peewee.fn.Count(Instance.id)\
                     .alias('number_of_study_related_instances')  # pylint: disable=no-member
             )
-            response_attrs.append((_tag, 'number_of_study_related_instances', 'IS'))
+            response_attrs.append(
+                (_tag, 'number_of_study_related_instances', 'IS', None)
+            )
             joins.update([(Study, Series), (Series, Instance)])
 
         query = Study.select(*select)
@@ -729,7 +735,9 @@ class Series(peewee.Model):
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
-                response_attrs.append((tag, ('study', 'patient', attr_name), vr))
+                response_attrs.append(
+                    (tag, ('study', 'patient', attr_name), vr, None)
+                )
             joins.update([(Series, Study), (Study, Patient)])
 
         study_attrs = [e for e in ds if e.tag in Study.mapping]
@@ -739,7 +747,7 @@ class Series(peewee.Model):
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
-                response_attrs.append((tag, ('study', attr_name), vr))
+                response_attrs.append((tag, ('study', attr_name), vr, None))
             joins.update([(Series, Study)])
 
         if 'NumberOfSeriesRelatedInstances' in ds:
@@ -749,7 +757,9 @@ class Series(peewee.Model):
                 peewee.fn.Count(Instance.id)\
                     .alias('number_of_study_related_series')  # pylint: disable=no-member
             )
-            response_attrs.append((_tag, 'number_of_series_related_instances', 'IS'))
+            response_attrs.append(
+                (_tag, 'number_of_series_related_instances', 'IS', None)
+            )
             joins.add((Series, Instance))
 
         query = Series.select(*select)
@@ -857,12 +867,18 @@ class Instance(peewee.Model):
         patient_attrs = [e for e in ds if e.tag in Patient.mapping]
         skipped.update(e.tag for e in patient_attrs)
         if patient_attrs:
-            _upper_level_filters = list(_filter_upper_level(Patient, patient_attrs))
+            _upper_level_filters = list(
+                _filter_upper_level(Patient, patient_attrs)
+            )
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
-                response_attrs.append((tag, ('series', 'study', 'patient', attr_name), vr))
-            joins.update([(Instance, Series), (Series, Study), (Study, Patient)])
+                response_attrs.append(
+                    (tag, ('series', 'study', 'patient', attr_name), vr, None)
+                )
+            joins.update(
+                [(Instance, Series), (Series, Study), (Study, Patient)]
+            )
 
         study_attrs = [e for e in ds if e.tag in Study.mapping]
         skipped.update(e.tag for e in study_attrs)
@@ -871,17 +887,21 @@ class Instance(peewee.Model):
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
-                response_attrs.append((tag, ('series', 'study', attr_name), vr))
+                response_attrs.append(
+                    (tag, ('series', 'study', attr_name), vr, None)
+                )
             joins.update([(Instance, Series), (Series, Study)])
 
         series_attrs = [e for e in ds if e.tag in Series.mapping]
         skipped.update(e.tag for e in series_attrs)
         if series_attrs:
-            _upper_level_filters = list(_filter_upper_level(Series, series_attrs))
+            _upper_level_filters = list(
+                _filter_upper_level(Series, series_attrs)
+            )
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
-                response_attrs.append((tag, ('series', attr_name), vr))
+                response_attrs.append((tag, ('series', attr_name), vr, None))
             joins.add((Instance, Series))
 
         query = Instance.select(*select)
@@ -927,10 +947,10 @@ def _build_filters(model, query, ds: pydicom.Dataset, skipped=None):
         try:
             attr_name, vr = model.mapping[elem.tag]
         except KeyError:
-            response_attrs.append((elem.tag, None, elem.VR))
+            response_attrs.append((elem.tag, None, elem.VR, None))
             continue
 
-        response_attrs.append((elem.tag, attr_name, vr))
+        response_attrs.append((elem.tag, attr_name, vr, None))
         if elem.is_empty:
             continue
 
@@ -1000,7 +1020,7 @@ def _encode_response(instance, response_attrs: list, encoding: str):
     """
     rsp = pydicom.Dataset()
     rsp.SpecificCharacterSet = encoding
-    for tag, attr_name, vr in response_attrs:
+    for tag, attr_name, vr, func in response_attrs:
         if attr_name is None:
             # Attribute not supported
             rsp.add_new(tag, vr, None)
@@ -1011,6 +1031,8 @@ def _encode_response(instance, response_attrs: list, encoding: str):
                 attr = instance
                 for field in attr_name:
                     attr = getattr(attr, field)
+            if func:
+                    attr = func(attr)
             rsp.add_new(tag, vr, attr)
     return rsp
 
