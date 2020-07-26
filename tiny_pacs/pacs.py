@@ -4,6 +4,7 @@ from itertools import chain
 
 import peewee
 import pydicom
+from pydicom.tag import Tag
 from pynetdicom2 import statuses
 
 from . import ae
@@ -391,31 +392,38 @@ class Patient(peewee.Model):
         response_attrs = []
 
         select = [Patient]
+        skipped = set()
         if 'NumberOfPatientRelatedStudies' in ds:
+            _tag = Tag(0x0020, 0x1200)
+            skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Study.id)\
                     .alias('number_of_patient_related_studies')  # pylint: disable=no-member
                 )
             response_attrs.append(
-                (0x00201200, 'number_of_patient_related_studies', 'IS')
+                (_tag, 'number_of_patient_related_studies', 'IS')
             )
             joins.add((Patient, Study))
         if 'NumberOfPatientRelatedSeries' in ds:
+            _tag = Tag(0x0020, 0x1202)
+            skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Series.id)\
                     .alias('number_of_patient_related_series')  # pylint: disable=no-member
             )
             response_attrs.append(
-                (0x00201202, 'number_of_patient_related_series', 'IS')
+                (_tag, 'number_of_patient_related_series', 'IS')
             )
             joins.update([(Patient, Study), (Study, Series)])
         if 'NumberOfPatientRelatedInstances' in ds:
+            _tag = Tag(0x0020, 0x1204)
+            skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Instance.id)\
                     .alias('number_of_patient_related_instances')  # pylint: disable=no-member
             )
             response_attrs.append(
-                (0x00201204, 'number_of_patient_related_instances', 'IS')
+                (_tag, 'number_of_patient_related_instances', 'IS')
             )
             joins.update([(Patient, Study), (Study, Series), (Series, Instance)])
 
@@ -593,33 +601,41 @@ class Study(peewee.Model):
             joins.add((Study, Patient))
 
         if 'ModalitiesInStudy' in ds:
+            _tag = Tag(0x0008, 0x0061)
+            skipped.add(_tag)
             # TODO: Add modalities in study filter
             agg_fun = db.string_agg_func()
             select.append(
                 agg_fun(Series.modality, '\\').alias('modalities_in_study')
             )
-            response_attrs.append((0x00080061, 'modalities_in_study', 'CS'))
+            response_attrs.append((_tag, 'modalities_in_study', 'CS'))
             joins.add((Study, Series))
         if 'SOPClassesInStudy' in ds:
+            _tag = Tag(0x0008, 0x0062)
+            skipped.add(_tag)
             agg_fun = db.string_agg_func()
             select.append(
                 agg_fun(Instance.sop_class_uid, '\\').alias('sop_classes_in_study')
             )
-            response_attrs.append((0x00080062, 'sop_classes_in_study', 'UI'))
+            response_attrs.append((_tag, 'sop_classes_in_study', 'UI'))
             joins.update([(Study, Series), (Series, Instance)])
         if 'NumberOfStudyRelatedSeries' in ds:
+            _tag = Tag(0x0020, 0x1206)
+            skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Series.id)\
                     .alias('number_of_study_related_series')  # pylint: disable=no-member
             )
-            response_attrs.append((0x00201202, 'number_of_study_related_series', 'IS'))
+            response_attrs.append((_tag, 'number_of_study_related_series', 'IS'))
             joins.add((Study, Series))
         if 'NumberOfStudyRelatedInstances' in ds:
+            _tag = Tag((0x0020, 0x1208))
+            skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Instance.id)\
                     .alias('number_of_study_related_instances')  # pylint: disable=no-member
             )
-            response_attrs.append((0x00201204, 'number_of_study_related_instances', 'IS'))
+            response_attrs.append((_tag, 'number_of_study_related_instances', 'IS'))
             joins.update([(Study, Series), (Series, Instance)])
 
         query = Study.select(*select)
@@ -727,11 +743,13 @@ class Series(peewee.Model):
             joins.update([(Series, Study)])
 
         if 'NumberOfSeriesRelatedInstances' in ds:
+            _tag = Tag((0x0020, 0x1209))
+            skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Instance.id)\
                     .alias('number_of_study_related_series')  # pylint: disable=no-member
             )
-            response_attrs.append((0x00201209, 'number_of_series_related_instances', 'IS'))
+            response_attrs.append((_tag, 'number_of_series_related_instances', 'IS'))
             joins.add((Series, Instance))
 
         query = Series.select(*select)
