@@ -31,6 +31,8 @@ class Devices(component.Component):
         # TODO add C-ECHO, to check availability
         remote_addr, _ = asce.client_address
         calling_ae_title = assoc.calling_ae_title.strip()
+        if calling_ae_title in self.devices:
+            return
         self.log_info(
             'Adding new device %s/%s/%d',
             calling_ae_title, remote_addr, self.default_port

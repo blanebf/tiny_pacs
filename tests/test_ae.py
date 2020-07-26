@@ -82,7 +82,13 @@ def test_move(ae_title: ae.AE):
     _ds = dataset.Dataset()
     _devices = devices.Devices(
         ae_title.bus,
-        {'REMOTE_PACS': {'address': '127.0.0.1', 'port': 11112, 'aet': 'REMOTE_PACS'}}
+        {
+            'devices': {
+                'REMOTE_PACS': {
+                    'address': '127.0.0.1', 'port': 11112, 'aet': 'REMOTE_PACS'
+                }
+            }
+        }
     )
     ae_title.bus.subscribe(ae.AEChannels.MOVE, callback)
     results = ae_title.on_receive_move(ctx, _ds, 'REMOTE_PACS')

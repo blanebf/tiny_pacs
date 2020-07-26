@@ -80,6 +80,7 @@ DEFAULT_AE_CONFIG = {
     'ae_title': ['TINY_PACS'],
     'port': 11112,
     'max_pdu_length': 65536,
+    'dump_ds': True,
     'supported_ts': [
         uid.ImplicitVRLittleEndian,
         uid.ExplicitVRLittleEndian,
