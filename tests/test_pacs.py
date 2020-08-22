@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import uuid
 import pytest
 
 from pydicom import Dataset
@@ -6,76 +7,77 @@ from pydicom import Dataset
 from tiny_pacs import db
 from tiny_pacs import event_bus
 from tiny_pacs import pacs
+from tiny_pacs.pacs import models
 
 
 @pytest.fixture
 def pacs_srv():
     bus = event_bus.EventBus()
-    _db = db.Database(bus, {})
+    _db = db.Database(bus, {'db_name': str(uuid.uuid4())})
     _pacs_srv = pacs.PACS(bus, {})
     bus.broadcast(event_bus.DefaultChannels.ON_START)
     with _db.atomic():
-        patient = pacs.Patient.create(
+        patient = models.Patient.create(
             patient_id='test1',
             patient_name='Test^Test^Test',
             patient_sex='M',
             patient_birth_date='19660101'
         )
 
-        study1 = pacs.Study.create(
+        study1 = models.Study.create(
             patient=patient,
             study_instance_uid='1.2.3.4',
             study_date='20200101',
             accession_number='1234'
         )
-        study1_series1 = pacs.Series.create(
+        study1_series1 = models.Series.create(
             study=study1,
             series_instance_uid='1.2.3.4.5',
             modality='DX'
         )
-        pacs.Instance.create(
+        models.Instance.create(
             series=study1_series1,
             sop_instance_uid='1.2.3.4.5.6',
             sop_class_uid='2.3.4'
         )
-        pacs.Instance.create(
+        models.Instance.create(
             series=study1_series1,
             sop_instance_uid='1.2.3.4.5.7',
             sop_class_uid='2.3.4'
         )
-        study1_series2 = pacs.Series.create(
+        study1_series2 = models.Series.create(
             study=study1,
             series_instance_uid = '1.2.3.4.6',
             modality='SR'
         )
-        pacs.Instance.create(
+        models.Instance.create(
             series=study1_series2,
             sop_instance_uid='1.2.3.4.6.6',
             sop_class_uid='2.3.5'
         )
 
-        study2 = pacs.Study.create(
+        study2 = models.Study.create(
             patient=patient,
             study_instance_uid='1.2.3.5',
             study_date='20200201',
             accession_number='1235'
         )
-        study2_series1 = pacs.Series.create(
+        study2_series1 = models.Series.create(
             study=study2,
             series_instance_uid='1.2.3.5.5',
             modality='CT'
         )
-        pacs.Instance.create(
+        models.Instance.create(
             series=study2_series1,
             sop_instance_uid='1.2.3.5.5.6',
             sop_class_uid='2.3.7'
         )
-        study2_series2 = pacs.Series.create(
+        study2_series2 = models.Series.create(
             study=study2,
             series_instance_uid='1.2.3.5.6',
             modality='PET'
         )
-        pacs.Instance.create(
+        models.Instance.create(
             series=study2_series2,
             sop_instance_uid='1.2.3.5.6.6',
             sop_class_uid='2.3.7'
@@ -222,7 +224,7 @@ def test_study_find_modalities_in_study_no_filter(pacs_srv: pacs.PACS):
     request.ModalitiesInStudy = None
     results = list(pacs_srv.c_find(request))
     assert len(results) == 1
-    assert results[0].ModalitiesInStudy == ['DX', 'SR']
+    assert set(results[0].ModalitiesInStudy) == set(['DX', 'SR'])
 
 
 def test_series_find_patient_filter(pacs_srv: pacs.PACS):

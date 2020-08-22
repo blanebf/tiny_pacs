@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import uuid
 import pydicom
 import pytest
 
@@ -15,7 +16,7 @@ from tiny_pacs import storage
 @pytest.fixture
 def memory_storage():
     bus = event_bus.EventBus()
-    _db = db.Database(bus, {})
+    _db = db.Database(bus, {'db_name': str(uuid.uuid4())})
     _storage = storage.InMemoryStorage(bus, {})
     bus.broadcast(event_bus.DefaultChannels.ON_START)
     return _storage
@@ -36,7 +37,7 @@ def test_new_file(memory_storage: storage.InMemoryStorage):
     assert _file.is_stored == False
 
 
-def test_successful_storage(memory_storage: storage.InMemoryStorage):
+def test_in_progress_storage(memory_storage: storage.InMemoryStorage):
     memory_storage.new_file(
         '1.2.3.4',
         '1.2.3',
@@ -45,9 +46,8 @@ def test_successful_storage(memory_storage: storage.InMemoryStorage):
     )
     ds = pydicom.Dataset()
     ds.SOPInstanceUID = '1.2.3.4'
-    memory_storage.bus.broadcast(storage.StorageChannels.ON_STORE_DONE, ds)
     _file = storage.StorageFiles.get(storage.StorageFiles.sop_instance_uid == '1.2.3.4')
-    assert _file.is_stored == True
+    assert _file.is_stored == False
 
 
 def test_failure_storage(memory_storage: storage.InMemoryStorage):

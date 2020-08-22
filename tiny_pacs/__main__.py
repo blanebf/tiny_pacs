@@ -2,6 +2,7 @@
 import argparse
 
 from . import config
+from . import interactive
 from . import server
 
 
@@ -13,6 +14,12 @@ def main():
         pacs_conf.ae['ae_title'] = [args.aet]
     if args.port:
         pacs_conf.ae['port'] = args.port
+    if args.interactive:
+        front = interactive.TerminalFront()
+        _config, run_server = front.run()
+        pacs_conf.update_config(_config)
+        if not run_server:
+            return
     srv = server.Server(pacs_conf)
     srv.start_with_block()
 
@@ -25,6 +32,8 @@ def parse_args():
                         help='Override Tiny PACS AE Title configuration')
     parser.add_argument('-p', '--port', default=None, type=int,
                         help='Override Tiny PACS port configuration')
+    parser.add_argument('-i', '--interactive', action='store_true',
+                        help='Start server in interactive mode')
     args = parser.parse_args()
     return args
 

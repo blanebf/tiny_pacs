@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import uuid
 import pydicom
 import pytest
 
@@ -19,7 +20,10 @@ from tiny_pacs import server
 def pacs():
     conf = config.Config()
     conf.update_config({
-        'ae': {'port': 11113}
+        'ae': {'port': 11113},
+        'components': {
+            'Database': {'on': True, 'db_name': str(uuid.uuid4())}
+        }
     })
     _pacs = server.Server(conf)
     _pacs.start()

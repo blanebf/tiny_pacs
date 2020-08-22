@@ -16,7 +16,9 @@ from tiny_pacs import event_bus
 @pytest.fixture
 def ae_title():
     bus = event_bus.EventBus()
-    return ae.AE(bus, {})
+    _ae = ae.AE(bus, {})
+    yield _ae
+    _ae.server_close()
 
 
 def test_assoc(ae_title: ae.AE):

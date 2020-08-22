@@ -117,7 +117,8 @@ class AE(applicationentity.AE):
 
         yield from chain.from_iterable(results)
 
-    def on_receive_move(self, context, ds, destination):
+    def on_receive_move(self, context: asceprovider.PContextDef,
+                        ds: pydicom.Dataset, destination: str):
         self.log.info('Received C-MOVE to %s (%r)', destination, context)
         if self.dump_ds:
             self.log.debug('C-MOVE dataset %r', ds)
@@ -163,7 +164,7 @@ class AE(applicationentity.AE):
         datasets = chain.from_iterable(results)
         return datasets
 
-    def on_commitment_request(self, remote_ae, uids):
+    def on_commitment_request(self, remote_ae: str, uids: list):
         self.log.info('Received Storage Commitment request for %s', remote_ae)
         self.log.debug('Storage Commitment uids %r', uids)
 

@@ -2,13 +2,14 @@
 import logging
 
 from . import event_bus
+from . import questions
 
 
 class Component:
     priority = 50
 
     @classmethod
-    def name(cls):
+    def name(cls) -> str:
         return cls.__name__
 
     def __init__(self, bus: event_bus.EventBus, config: dict):
@@ -19,6 +20,10 @@ class Component:
         self.subscribe(event_bus.DefaultChannels.ON_START, self.on_start)
         self.subscribe(event_bus.DefaultChannels.ON_STARTED, self.on_started)
         self.subscribe(event_bus.DefaultChannels.ON_EXIT, self.on_exit)
+
+    @classmethod
+    def interactive(cls) -> questions.Questionnaire:
+        return questions.Questionnaire([])
 
     def on_start(self):
         self.log_info(f'Component {self.name()} starting...')

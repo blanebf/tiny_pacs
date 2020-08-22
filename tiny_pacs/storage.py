@@ -15,6 +15,7 @@ from . import ae
 from . import component
 from . import db
 from . import event_bus
+from . import questions
 
 
 class StorageChannels(enum.Enum):
@@ -137,6 +138,15 @@ class FileStorage(StorageBase):
             storage_dir = tempfile.mkdtemp()
             self.subscribe(event_bus.DefaultChannels.ON_EXIT, self.cleanup)
         self.storage_dir = storage_dir
+
+    @classmethod
+    def interactive(cls):
+        return questions.Questionnaire([
+            questions.Question(
+                'storage_dir', 'Enter storage directory',
+                lambda v: v, default=None
+            )
+        ])
 
     def on_get_file(self, context, command_set: pydicom.Dataset):
         sop_instance_uid = command_set.AffectedSOPInstanceUID
