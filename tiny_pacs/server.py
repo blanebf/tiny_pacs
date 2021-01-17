@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
+"""Provides main server implementation.
+
+Initializes all components and starts listening for incoming connections
+"""
 import logging
 import logging.config
 import time
 import threading
+from typing import Iterator
 
-from pynetdicom2 import uids
 from . import ae
+from . import component
 from . import config
 from . import event_bus
 
@@ -65,13 +70,13 @@ class Server:
         self.bus.broadcast_nothrow(event_bus.DefaultChannels.ON_EXIT)
         self.ae.quit()
 
-    def initalize_components(self):
+    def initalize_components(self) -> Iterator[component.Component]:
         """Component initialization
 
         :yield: initializes components
         :rtype: component.Component
         """
-        for component, _config in self.config.components.items():
+        for _component, _config in self.config.components.items():
             is_on = _config.get('on', False)
             if not is_on:
                 # Component is disabled
@@ -82,5 +87,5 @@ class Server:
                 # TODO: add dynamic component loading
                 pass
 
-            component = factory(self.bus, _config)
-            yield component
+            _component = factory(self.bus, _config)
+            yield _component

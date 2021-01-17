@@ -2,9 +2,7 @@
 import enum
 from itertools import chain
 
-import peewee
 import pydicom
-from pydicom.tag import Tag
 from pynetdicom2 import statuses
 
 from .. import ae
@@ -131,8 +129,8 @@ class PACS(component.Component):
         try:
             ds = pydicom.dcmread(ds, stop_before_pixels=True)
             self.c_store(ds)
-        except Exception as e:
-            self.log_exception(f'Failed to store dataset: {e}')
+        except Exception as error:  # pylint: disable=broad-except
+            self.log_exception(f'Failed to store dataset: {error}')
             self.broadcast(storage.StorageChannels.ON_STORE_FAILURE, ds)
             return statuses.C_STORE_CANNON_UNDERSTAND
         else:
@@ -140,11 +138,11 @@ class PACS(component.Component):
             self.broadcast(storage.StorageChannels.ON_STORE_DONE, ds)
             return statuses.SUCCESS
 
-    def on_find(self, context, ds: pydicom.Dataset):
+    def on_find(self, _, ds: pydicom.Dataset):
         """Handling of incoming find request
 
-        :param context: presentation context
-        :type context: pynetdicom2.asceprovider.PContextDef
+        :param _: presentation context
+        :type _: pynetdicom2.asceprovider.PContextDef
         :param ds: incoming dataset
         :type ds: pydicom.Dataset
         :yield: tuple of find result and pending status
@@ -251,9 +249,9 @@ class PACS(component.Component):
         level = ds.QueryRetrieveLevel
         level = QR_LEVEL[level]
         query = models.Instance.select(
-                    models.Instance.sop_instance_uid,
-                    models.Series.series_instance_uid,
-                    models.Study.study_instance_uid
+            models.Instance.sop_instance_uid,
+            models.Series.series_instance_uid,
+            models.Study.study_instance_uid
             )\
             .join(models.Series)\
             .join(models.Study)\

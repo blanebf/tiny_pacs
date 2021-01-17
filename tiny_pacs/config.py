@@ -6,7 +6,6 @@ from pydicom import uid
 from pynetdicom2 import uids
 import yaml
 
-from . import ae
 from . import db
 from . import devices
 from . import pacs
@@ -34,7 +33,7 @@ class Config(dict):
         elif hasattr(_config, 'read'):
             try:
                 _config = self._read_yaml(_config)
-            except Exception:
+            except Exception:   # pylint: disable=broad-except
                 _config = self._read_json(_config)
             else:
                 _config = None

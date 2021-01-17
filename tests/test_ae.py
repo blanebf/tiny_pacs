@@ -21,8 +21,8 @@ def ae_title():
     _ae.server_close()
 
 
-def test_assoc(ae_title: ae.AE):
-    def callback(asce, assoc: pdu.AAssociateRqPDU):
+def test_assoc(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
+    def callback(_, assoc: pdu.AAssociateRqPDU):
         # Fill with proper assoc object
         assert assoc.calling_ae_title == 'TEST'
         assert assoc.called_ae_title == 'TINY_PACS'
@@ -31,7 +31,7 @@ def test_assoc(ae_title: ae.AE):
     ae_title.on_association_request(None, asce_rq)
 
 
-def test_find(ae_title: ae.AE):
+def test_find(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
     def callback(context, ds):
         assert ctx == context
         assert ds == _ds
@@ -60,7 +60,7 @@ def test_store_success(ae_title: ae.AE):
     assert status.is_success
 
 
-def test_store_failure(ae_title: ae.AE):
+def test_store_failure(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
     def callback(context, ds):
         assert ctx == context
         assert ds == _ds
@@ -73,7 +73,7 @@ def test_store_failure(ae_title: ae.AE):
     assert status.is_failure
 
 
-def test_move(ae_title: ae.AE):
+def test_move(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
     def callback(context, ds, destination):
         assert destination == 'REMOTE_PACS'
         assert ctx == context

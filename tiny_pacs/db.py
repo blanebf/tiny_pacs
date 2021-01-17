@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
-import datetime
 import enum
 from itertools import chain
 
 import peewee
-
-from pydicom import Dataset
-from pydicom import valuerep
+from playhouse import pool
 
 from . import component
 from . import event_bus
@@ -140,7 +137,7 @@ class DBQuestionnaire:
         )
         self.sqlite_db_name = questions.Question(
             'db_name', 'Enter SQLite database file name',
-            lambda v: v, default=None
+            lambda v: v, default=None, default_repr=':memory:'
         )
         self.postgres_db_name = questions.Question(
             'db_name', 'Enter PostgreSQL database name',

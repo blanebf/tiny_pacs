@@ -7,19 +7,19 @@ from tiny_pacs import event_bus
 def bus():
     return event_bus.EventBus()
 
-def test_empty_bus(bus: event_bus.EventBus):
+def test_empty_bus(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     assert event_bus.DefaultChannels.ON_START in bus.listeners
     assert event_bus.DefaultChannels.ON_STARTED in bus.listeners
     assert event_bus.DefaultChannels.ON_EXIT in bus.listeners
 
-def test_subscription_default_channel(bus: event_bus.EventBus):
+def test_subscription_default_channel(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback():
         pass
     bus.subscribe(event_bus.DefaultChannels.ON_START, callback)
     callbacks = bus.listeners[event_bus.DefaultChannels.ON_START]
     assert callback in callbacks
 
-def test_subscription_custom_channel(bus: event_bus.EventBus):
+def test_subscription_custom_channel(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback():
         pass
     bus.subscribe('test-channel', callback)
@@ -27,7 +27,7 @@ def test_subscription_custom_channel(bus: event_bus.EventBus):
     assert callback in callbacks
 
 
-def test_send_one(bus: event_bus.EventBus):
+def test_send_one(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback():
         return 1
 
@@ -36,7 +36,7 @@ def test_send_one(bus: event_bus.EventBus):
     assert result == 1
 
 
-def test_send_one_priority(bus: event_bus.EventBus):
+def test_send_one_priority(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback1():
         return 1
 
@@ -50,7 +50,7 @@ def test_send_one_priority(bus: event_bus.EventBus):
     assert result == 2
 
 
-def test_send_any(bus: event_bus.EventBus):
+def test_send_any(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback1():
         return None
 
@@ -64,7 +64,7 @@ def test_send_any(bus: event_bus.EventBus):
     assert result == 1
 
 
-def test_broadcast(bus: event_bus.EventBus):
+def test_broadcast(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback1():
         return 1
 
@@ -79,7 +79,7 @@ def test_broadcast(bus: event_bus.EventBus):
     assert 2 in results
 
 
-def test_broadcast_priorities(bus: event_bus.EventBus):
+def test_broadcast_priorities(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback1():
         return 1
 
@@ -94,7 +94,7 @@ def test_broadcast_priorities(bus: event_bus.EventBus):
     assert results[1] == 1
 
 
-def test_broadcast_exception(bus: event_bus.EventBus):
+def test_broadcast_exception(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback1():
         raise ValueError()
 
@@ -108,7 +108,7 @@ def test_broadcast_exception(bus: event_bus.EventBus):
         bus.broadcast('test-channel')
 
 
-def test_broadcast_nothrow(bus: event_bus.EventBus):
+def test_broadcast_nothrow(bus: event_bus.EventBus):  # pylint: disable=redefined-outer-name
     def callback1():
         raise ValueError()
 

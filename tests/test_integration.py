@@ -60,11 +60,11 @@ def test_ds():
     return ds
 
 
-def test_startup(pacs: server.Server, pacs_client: client.DICOMClient):
+def test_startup(pacs: server.Server, pacs_client: client.DICOMClient):  # pylint: disable=redefined-outer-name
     pacs_client.echo()
 
 
-def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):
+def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):  # pylint: disable=redefined-outer-name
     request = pydicom.Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -75,7 +75,7 @@ def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):
     assert not list(results)
 
 
-def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):
+def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):  # pylint: disable=redefined-outer-name
     request = pydicom.Dataset()
     request.StudyInstanceUID = '1.2.3'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -83,7 +83,7 @@ def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):
     pacs_client.move(request)
 
 
-def test_storage(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):
+def test_storage(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):  # pylint: disable=redefined-outer-name
     pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE, uid.ImplicitVRLittleEndian)
 
 
@@ -103,7 +103,7 @@ class CStoreAE(applicationentity.AE):
         return statuses.SUCCESS
 
 
-def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):
+def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):  # pylint: disable=redefined-outer-name
     test_storage(pacs, pacs_client, test_ds)
     find_request = pydicom.Dataset()
     find_request.QueryRetrieveLevel = 'IMAGE'

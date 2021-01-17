@@ -93,8 +93,8 @@ class AE(applicationentity.AE):
 
         try:
             results = self.bus.broadcast(AEChannels.STORE, context, ds)
-        except Exception as e:
-            msg = f'C-STORE handling failed: {e}'
+        except Exception as error:
+            msg = f'C-STORE handling failed: {error}'
             self.log.exception(msg)
             raise exceptions.EventHandlingError(msg)
 
@@ -110,8 +110,8 @@ class AE(applicationentity.AE):
 
         try:
             results = self.bus.broadcast(AEChannels.FIND, context, ds)
-        except Exception as e:
-            msg = f'C-FIND handling failed {e}'
+        except Exception as error:
+            msg = f'C-FIND handling failed {error}'
             self.log.exception(msg)
             raise exceptions.EventHandlingError(msg)
 
@@ -131,8 +131,8 @@ class AE(applicationentity.AE):
 
         try:
             results = self.bus.broadcast(AEChannels.MOVE, context, ds, destination)
-        except Exception as e:
-            msg = f'C-MOVE handling failed {e}'
+        except Exception as error:
+            msg = f'C-MOVE handling failed {error}'
             self.log.exception(msg)
             raise exceptions.EventHandlingError(msg)
 
@@ -157,8 +157,8 @@ class AE(applicationentity.AE):
 
         try:
             results = self.bus.broadcast(AEChannels.GET, context, ds)
-        except Exception as e:
-            msg = f'C-GET handling failed {e}'
+        except Exception as error:
+            msg = f'C-GET handling failed {error}'
             self.log.exception(msg)
             raise exceptions.EventHandlingError(msg)
         datasets = chain.from_iterable(results)
@@ -176,8 +176,8 @@ class AE(applicationentity.AE):
 
         try:
             results = self.bus.broadcast(AEChannels.COMMITMENT, uids)
-        except Exception as e:
-            msg = f'Storage Commitment handling failed: {e}'
+        except Exception as error:
+            msg = f'Storage Commitment handling failed: {error}'
             self.log.exception(msg)
             raise exceptions.EventHandlingError(msg)
 

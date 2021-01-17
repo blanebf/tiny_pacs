@@ -22,7 +22,7 @@ def memory_storage():
     return _storage
 
 
-def test_new_file(memory_storage: storage.InMemoryStorage):
+def test_new_file(memory_storage: storage.InMemoryStorage):  # pylint: disable=redefined-outer-name
     memory_storage.new_file(
         '1.2.3.4',
         '1.2.3',
@@ -37,7 +37,7 @@ def test_new_file(memory_storage: storage.InMemoryStorage):
     assert _file.is_stored == False
 
 
-def test_in_progress_storage(memory_storage: storage.InMemoryStorage):
+def test_in_progress_storage(memory_storage: storage.InMemoryStorage):  # pylint: disable=redefined-outer-name
     memory_storage.new_file(
         '1.2.3.4',
         '1.2.3',
@@ -50,7 +50,7 @@ def test_in_progress_storage(memory_storage: storage.InMemoryStorage):
     assert _file.is_stored == False
 
 
-def test_failure_storage(memory_storage: storage.InMemoryStorage):
+def test_failure_storage(memory_storage: storage.InMemoryStorage):  # pylint: disable=redefined-outer-name
     memory_storage.new_file(
         '1.2.3.4',
         '1.2.3',
@@ -64,7 +64,7 @@ def test_failure_storage(memory_storage: storage.InMemoryStorage):
         storage.StorageFiles.get(storage.StorageFiles.sop_instance_uid == '1.2.3.4')
 
 
-def test_get_files(memory_storage: storage.InMemoryStorage):
+def test_get_files(memory_storage: storage.InMemoryStorage):  # pylint: disable=redefined-outer-name
     ts = uid.ImplicitVRLittleEndian
     ctx = asceprovider.PContextDef(1, '1.2.3', ts)
     cmd_ds = pydicom.Dataset()
@@ -84,7 +84,7 @@ def test_get_files(memory_storage: storage.InMemoryStorage):
         assert ds.SOPInstanceUID == '1.2.3.4'
 
 
-def test_get_files_empty(memory_storage: storage.InMemoryStorage):
+def test_get_files_empty(memory_storage: storage.InMemoryStorage):  # pylint: disable=redefined-outer-name
     memory_storage.new_file(
         '1.2.3.4',
         '1.2.3',

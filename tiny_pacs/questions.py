@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Callable
 
 class Question:
-    def __init__(self, key, prompt: str, handler: callable, repeatable=False,
-                 default=None):
+    def __init__(self, key, prompt: str, handler: Callable[Any],
+                 repeatable=False, default: Any = None,
+                 default_repr: str = None):
         self.key = key
         self.prompt = prompt
         self.handler = handler
         self.repeatable = repeatable
         self.default = default
+        self.default_repr = default_repr
         if repeatable:
             self._value = []
         else:
             self._value = default
 
     @property
-    def value(self):
+    def value(self) -> Any:
         if self.repeatable:
             if not self._value:
                 return self.default

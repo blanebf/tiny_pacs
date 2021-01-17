@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""DICOM-services
+
+Provides alternative implementation for standard DICOM-services for usage with
+this PACS implementation.
+"""
 import functools
 from itertools import count
 
@@ -73,7 +78,7 @@ def qr_move_scp(asce: asceprovider.AssociationAcceptor,
             elif status.is_warning:
                 warning += 1
             else:
-                success +=1
+                success += 1
             rsp.num_of_remaining_sub_ops = nop - completed
             rsp.num_of_completed_sub_ops = success
             rsp.num_of_failed_sub_ops = failed
@@ -141,12 +146,12 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
             asceprovider.PContextDef(pc_id, sop_class, ts)
         )
         status = service(data_set, completed)
-        if status.is_failure:
+        if status.is_failure:  # pylint: disable=no-member
             failed += 1
-        elif status.is_warning:
+        elif status.is_warning:  # pylint: disable=no-member
             warning += 1
         else:
-            success +=1
+            success += 1
         rsp.num_of_remaining_sub_ops = nop - completed
         rsp.num_of_completed_sub_ops = success
         rsp.num_of_failed_sub_ops = failed

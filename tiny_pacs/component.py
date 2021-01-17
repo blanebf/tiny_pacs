@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+from typing import Any, List, Tuple
 
 from . import event_bus
 from . import questions
@@ -39,16 +40,16 @@ class Component:
             priority = self.priority
         self.bus.subscribe(channel, callback, priority)
 
-    def broadcast(self, channel: str, *args, **kwargs):
+    def broadcast(self, channel: str, *args, **kwargs) -> List[Any]:
         return self.bus.broadcast(channel, *args, **kwargs)
 
-    def broadcast_nothrow(self, channel: str, *args, **kwargs):
+    def broadcast_nothrow(self, channel: str, *args, **kwargs) -> List[Tuple[Any, bool]]:
         return self.bus.broadcast_nothrow(channel, *args, **kwargs)
 
-    def send_one(self, channel: str, *args, **kwargs):
+    def send_one(self, channel: str, *args, **kwargs) -> Any:
         return self.bus.send_one(channel, *args, **kwargs)
 
-    def send_any(self, channel: str, *args, **kwargs):
+    def send_any(self, channel: str, *args, **kwargs) -> Any:
         return self.bus.send_any(channel, *args, **kwargs)
 
     def log(self, level, msg, *args, **kwargs):

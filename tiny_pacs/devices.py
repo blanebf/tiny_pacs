@@ -11,6 +11,9 @@ from . import questions
 
 
 class DevicesChannels(enum.Enum):
+    """Device component events."""
+
+    #: Get device configuration by AE Title
     DEVICE_BY_AE = 'device-by-ae'
 
 
@@ -37,17 +40,17 @@ class Devices(component.Component):
             ),
             questions.Question(
                 'default_port', 'Enter default for new devices',
-                lambda v: int(v), default='11112'
+                int, default='11112'
             ),
             DeviceQuestion(
                 'devices', 'Add pre-configurated device '
                 '(AET, address, port, separated by spaces)',
-                add_device, True
+                add_device, True, default_repr='[]'
             )
         ])
 
-    def device_by_ae(self, ae: str):
-        return self.devices.get(ae)
+    def device_by_ae(self, _ae: str):
+        return self.devices.get(_ae)
 
     def add_device_from_asce(self, asce: asceprovider.AssociationAcceptor,
                              assoc: pdu.AAssociateRqPDU):

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import peewee
 import pydicom
 from . import models
 from . import base_api
@@ -67,7 +66,9 @@ class InstanceAPI(base_api.BaseAPI):
                     (tag, ('series', 'study', 'patient', attr_name), vr, None)
                 )
             joins.update(
-                [(models.Instance, models.Series), (models.Series, models.Study), (models.Study, models.Patient)]
+                [(models.Instance, models.Series),
+                 (models.Series, models.Study), (models.Study, models.Patient)
+                ]
             )
 
         study_attrs = [e for e in ds if e.tag in models.Study.mapping]

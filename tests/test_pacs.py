@@ -85,18 +85,18 @@ def pacs_srv():
     return _pacs_srv
 
 
-def test_patient_find_no_filters(pacs_srv: pacs.PACS):
+def test_patient_find_no_filters(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
     request.SpecificCharacterSet = 'ISO_IR 192'
     request.QueryRetrieveLevel = 'PATIENT'
     for patient in pacs_srv.c_find(request):
-       assert patient.PatientName == 'Test^Test^Test'
-       assert patient.PatientSex == 'M'
+        assert patient.PatientName == 'Test^Test^Test'
+        assert patient.PatientSex == 'M'
 
 
-def test_patient_find_with_count(pacs_srv: pacs.PACS):
+def test_patient_find_with_count(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -104,23 +104,23 @@ def test_patient_find_with_count(pacs_srv: pacs.PACS):
     request.QueryRetrieveLevel = 'PATIENT'
     request.NumberOfPatientRelatedStudies = None
     for patient in pacs_srv.c_find(request):
-       assert patient.PatientName == 'Test^Test^Test'
-       assert patient.PatientSex == 'M'
-       assert patient.NumberOfPatientRelatedStudies == 2
+        assert patient.PatientName == 'Test^Test^Test'
+        assert patient.PatientSex == 'M'
+        assert patient.NumberOfPatientRelatedStudies == 2
 
 
-def test_patient_find_text_filter_positive(pacs_srv: pacs.PACS):
+def test_patient_find_text_filter_positive(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientSex = None
     request.SpecificCharacterSet = 'ISO_IR 192'
     request.QueryRetrieveLevel = 'PATIENT'
     request.PatientName = 'Test^*'
     for patient in pacs_srv.c_find(request):
-       assert patient.PatientName == 'Test^Test^Test'
-       assert patient.PatientSex == 'M'
+        assert patient.PatientName == 'Test^Test^Test'
+        assert patient.PatientSex == 'M'
 
 
-def test_patient_find_text_filter_negative(pacs_srv: pacs.PACS):
+def test_patient_find_text_filter_negative(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientSex = None
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -129,7 +129,7 @@ def test_patient_find_text_filter_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_patient_find_date_single_positive(pacs_srv: pacs.PACS):
+def test_patient_find_date_single_positive(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -137,11 +137,11 @@ def test_patient_find_date_single_positive(pacs_srv: pacs.PACS):
     request.QueryRetrieveLevel = 'PATIENT'
     request.PatientBirthDate = '19660101'
     for patient in pacs_srv.c_find(request):
-       assert patient.PatientName == 'Test^Test^Test'
-       assert patient.PatientSex == 'M'
+        assert patient.PatientName == 'Test^Test^Test'
+        assert patient.PatientSex == 'M'
 
 
-def test_patient_find_date_single_negative(pacs_srv: pacs.PACS):
+def test_patient_find_date_single_negative(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -151,7 +151,7 @@ def test_patient_find_date_single_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_patient_find_date_range_positive(pacs_srv: pacs.PACS):
+def test_patient_find_date_range_positive(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -159,11 +159,11 @@ def test_patient_find_date_range_positive(pacs_srv: pacs.PACS):
     request.QueryRetrieveLevel = 'PATIENT'
     request.PatientBirthDate = '19650101-19660102'
     for patient in pacs_srv.c_find(request):
-       assert patient.PatientName == 'Test^Test^Test'
-       assert patient.PatientSex == 'M'
+        assert patient.PatientName == 'Test^Test^Test'
+        assert patient.PatientSex == 'M'
 
 
-def test_patient_find_date_range_negative(pacs_srv: pacs.PACS):
+def test_patient_find_date_range_negative(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -173,7 +173,7 @@ def test_patient_find_date_range_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_study_find_no_patient_attrs(pacs_srv: pacs.PACS):
+def test_study_find_no_patient_attrs(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.SpecificCharacterSet = 'ISO_IR 192'
     request.QueryRetrieveLevel = 'STUDY'
@@ -183,7 +183,7 @@ def test_study_find_no_patient_attrs(pacs_srv: pacs.PACS):
     assert results[0].AccessionNumber == '1234'
 
 
-def test_study_find_patient_attrs_no_filters(pacs_srv: pacs.PACS):
+def test_study_find_patient_attrs_no_filters(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = None
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -195,7 +195,7 @@ def test_study_find_patient_attrs_no_filters(pacs_srv: pacs.PACS):
     assert results[0].PatientName == 'Test^Test^Test'
 
 
-def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS):
+def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = 'Test^*'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -207,7 +207,7 @@ def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS):
     assert results[0].PatientName == 'Test^Test^Test'
 
 
-def test_study_find_patient_attrs_with_filters_negative(pacs_srv: pacs.PACS):
+def test_study_find_patient_attrs_with_filters_negative(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = 'Test1^*'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -216,7 +216,7 @@ def test_study_find_patient_attrs_with_filters_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_study_find_modalities_in_study_no_filter(pacs_srv: pacs.PACS):
+def test_study_find_modalities_in_study_no_filter(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.SpecificCharacterSet = 'ISO_IR 192'
     request.QueryRetrieveLevel = 'STUDY'
@@ -227,7 +227,7 @@ def test_study_find_modalities_in_study_no_filter(pacs_srv: pacs.PACS):
     assert set(results[0].ModalitiesInStudy) == set(['DX', 'SR'])
 
 
-def test_series_find_patient_filter(pacs_srv: pacs.PACS):
+def test_series_find_patient_filter(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     request = Dataset()
     request.PatientName = 'Test^*'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -238,7 +238,7 @@ def test_series_find_patient_filter(pacs_srv: pacs.PACS):
     assert len(results) == 4
 
 
-def test_store(pacs_srv: pacs.PACS):
+def test_store(pacs_srv: pacs.PACS):  # pylint: disable=redefined-outer-name
     ds = Dataset()
     ds.SpecificCharacterSet = 'ISO_IR 192'
     ds.PatientID = 'test_id'

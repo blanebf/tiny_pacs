@@ -76,7 +76,7 @@ class SeriesAPI(base_api.BaseAPI):
             skipped.add(_tag)
             select.append(
                 peewee.fn.Count(models.Instance.id)\
-                    .alias('number_of_study_related_series')  # pylint: disable=no-member
+                    .alias('number_of_series_related_instances')  # pylint: disable=no-member
             )
             response_attrs.append(
                 (_tag, 'number_of_series_related_instances', 'IS', None)

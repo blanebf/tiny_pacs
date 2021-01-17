@@ -1,7 +1,24 @@
 # -*- coding: utf-8 -*-
+"""
+Evemt bus module.
+
+Provides simple implementation of publish/subscibire model.
+
+`EventBus` class provides all essential methods for publishing events and
+subscribing to them.
+
+Module also proveds `DefaultChannels` enum for common events such as:
+
+    * 'on-start' - for when service is starting
+    * 'on-stated' - when all subscribers have been properly initialized
+    * 'on-exit' - when service is stopping (usually used for clean up)
+
+"""
 import enum
 import operator
 import logging
+
+from typing import Any, List, Tuple, Union
 
 
 class DefaultChannels(enum.Enum):
@@ -21,7 +38,6 @@ class NoListenersError(Exception):
     """Raised when there are no listeners for requested event.
 
     This error is not raised when using broadcast method."""
-    pass
 
 
 class EventBus:
@@ -40,7 +56,12 @@ class EventBus:
     ]
 
     @classmethod
-    def name(cls):
+    def name(cls) -> str:
+        """Component name. Used in logging
+
+        :return: component name
+        :rtype: [str]
+        """
         return cls.__name__
 
     def __init__(self):
@@ -83,7 +104,7 @@ class EventBus:
             listeners.discard(callback)
             del self._priorities[(channel, callback)]
 
-    def broadcast(self, channel: str, *args, **kwargs):
+    def broadcast(self, channel: str, *args, **kwargs) -> List[Any]:
         """Broadcast the event to all listeners on the channel.
 
         Event is handled according to listeners priority.
@@ -91,7 +112,7 @@ class EventBus:
         :param channel: event name
         :type channel: str
         :return: list of results from all listeners
-        :rtype: list
+        :rtype: List[Any]
         """
         results = []
         if channel not in self.listeners:
@@ -102,7 +123,7 @@ class EventBus:
             results.append(result)
         return results
 
-    def broadcast_nothrow(self, channel: str, *args, **kwargs):
+    def broadcast_nothrow(self, channel: str, *args, **kwargs) -> List[Tuple[Any, bool]]:
         """Broadcast the event to all listeners on the channel.
 
         Event is handled according to listeners priority. In case one of the
@@ -115,7 +136,7 @@ class EventBus:
                  listener or exception, if it occured. Second value of the tuple
                  would be either `True` (if no exception occured) or `False` (
                  if exception did occur)
-        :rtype: list
+        :rtype: List[Tuple[Any, bool]]
         """
         results = []
         if channel not in self.listeners:
@@ -124,13 +145,21 @@ class EventBus:
         for _, listener in self._sort_listeners(channel):
             try:
                 result = listener(*args, **kwargs)
-            except Exception as e:
-                results.append((e, True))
+            except Exception as error:  # pylint: disable=broad-except
+                results.append((error, True))
             else:
                 results.append((result, False))
         return results
 
-    def send_one(self, channel: str, *args, **kwargs):
+    def send_one(self, channel: str, *args, **kwargs) -> Any:
+        """Sends event to one listiner with highest priority
+
+        :param channel: event name
+        :type channel: str
+        :raises NoListenersError: raised when no listener found for specified event
+        :return: result from a listiner with highest priority
+        :rtype: Any
+        """
         try:
             listener = self._sort_listeners(channel)[0][1]
         except IndexError:
@@ -139,7 +168,17 @@ class EventBus:
             raise NoListenersError(msg)
         return listener(*args, **kwargs)
 
-    def send_any(self, channel: str, *args, **kwargs):
+    def send_any(self, channel: str, *args, **kwargs) -> Union[Any, None]:
+        """Broadcast the specfied event and returns firts none `None` result
+
+        If all listeners return `None` or no listeners present for specfied event
+        method returns `None`
+
+        :param channel: event name
+        :type channel: str
+        :return: first none `None` result or `None`
+        :rtype: Union[Any, None]
+        """
         for _, listener in self._sort_listeners(channel):
             result = listener(*args, **kwargs)
             if result is not None:

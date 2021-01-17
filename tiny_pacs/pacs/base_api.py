@@ -144,7 +144,7 @@ class BaseAPI:
                     for field in attr_name:
                         attr = getattr(attr, field)
                 if func:
-                        attr = func(attr)
+                    attr = func(attr)
                 rsp.add_new(tag, vr, attr)
         return rsp
 
