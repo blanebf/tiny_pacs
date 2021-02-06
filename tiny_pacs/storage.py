@@ -9,7 +9,7 @@ import io
 import os
 import shutil
 import tempfile
-from typing import List, Tuple, IO
+from typing import List, Tuple, IO, Type
 
 import peewee
 
@@ -81,7 +81,7 @@ class StorageBase(component.Component):
         self.subscribe(db.DBChannels.TABLES, self.tables)
 
     @staticmethod
-    def tables() -> List[peewee.Model]:
+    def tables() -> List[Type[peewee.Model]]:
         """Returns a list of tables used by the component
 
         :return: list of tables
@@ -135,7 +135,7 @@ class StorageBase(component.Component):
         raise NotImplementedError()
 
     def new_file(self, sop_instance_uid: str, sop_class_uid: str,
-                 transfer_syntax: str, file_name: str) -> StorageFiles:
+                 transfer_syntax: str, file_name: str) -> peewee.Model:
         """Adds new file record to the database
 
         :param sop_instance_uid: file SOP Instance UID
@@ -209,9 +209,9 @@ class StorageBase(component.Component):
         sop_instance_uids = [i for _, i in instances]
         query = self.find_files(sop_instance_uids)
         stored_instances = frozenset((r.sop_class_uid, r.sop_instance_uid) for r in query)
-        instances = frozenset(instances)
-        success = instances & stored_instances
-        failure = instances - stored_instances
+        _instances = frozenset(instances)
+        success = _instances & stored_instances
+        failure = _instances - stored_instances
         self.log_debug('Verification, stored successfully: %r', success)
         self.log_debug('Verification, missing from storage: %r', failure)
         return success, failure

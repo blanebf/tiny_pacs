@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+"""Application entity implementation for tiny PACS.
+
+Handles all relevant SCPs and emits appropriate events.
+"""
 import enum
 from itertools import chain
 import logging
@@ -17,17 +21,38 @@ from . import services
 
 
 class AEChannels(enum.Enum):
+    """All AE channels."""
+
+    #: Association request event
     ASSOC = 'on-assoc-request'
+
+    #: C-STORE event
     STORE = 'on-receive-store'
+
+    #: C-FIND event
     FIND = 'on-receive-find'
+
+    #: C-MOVE event
     MOVE = 'on-receive-move'
+
+    #: C-GET event
     GET = 'on-receive-get'
+
+    #: Storage commitment event
     COMMITMENT = 'on-receive-commitment'
+
+    #: Get file event
     ON_GET_FILE = 'on-store-get-file'
+
+    #: Main AE Title request event
     MAIN_AET = 'get-main-aet'
 
 
 class AE(applicationentity.AE):
+    """Application Entity with SCP implementations.
+
+    Adds all relevant SCPs for tiny PACS.
+    """
     def __init__(self, bus: event_bus.EventBus, config: dict):
         self.bus = bus
         self.log = logging.getLogger('AE')
@@ -55,7 +80,12 @@ class AE(applicationentity.AE):
         self.add_scp(sopclass.StorageCommitment())
         self.bus.subscribe(AEChannels.MAIN_AET, self.get_main_aet)
 
-    def get_main_aet(self):
+    def get_main_aet(self) -> str:
+        """Returns main AE title
+
+        :return: main AE title
+        :rtype: str
+        """
         return self.valid_aet[0]
 
     def get_file(self, context, command_set: pydicom.Dataset):
@@ -168,9 +198,9 @@ class AE(applicationentity.AE):
         self.log.info('Received Storage Commitment request for %s', remote_ae)
         self.log.debug('Storage Commitment uids %r', uids)
 
-        remote_ae = self.bus.send_any(devices.DevicesChannels.DEVICE_BY_AE, remote_ae)
-        if not remote_ae:
-            msg = f'Storage Commitment destination unknown: {remote_ae}'
+        _remote_ae = self.bus.send_any(devices.DevicesChannels.DEVICE_BY_AE, remote_ae)
+        if not _remote_ae:
+            msg = f'Storage Commitment destination unknown: {_remote_ae}'
             self.log.error(msg)
             raise exceptions.EventHandlingError(msg)
 

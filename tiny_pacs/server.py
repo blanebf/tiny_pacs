@@ -82,7 +82,7 @@ class Server:
                 # Component is disabled
                 continue
 
-            factory = config.COMPONENT_REGISTRY.get(component)
+            factory = config.COMPONENT_REGISTRY.get(_component)
             if factory is None:
                 # TODO: add dynamic component loading
                 pass

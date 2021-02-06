@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from typing import Generator
+
 import peewee
 import pydicom
 from pydicom.tag import Tag
@@ -9,7 +11,7 @@ from . import models
 from . import base_api
 
 class StudyAPI(base_api.BaseAPI):
-    def c_store(self, patient: models.Patient, ds: pydicom.Dataset):
+    def c_store(self, patient: peewee.Model, ds: pydicom.Dataset) -> peewee.Model:
         """C-STORE handler
 
         :param patient: patient model for study
@@ -28,28 +30,20 @@ class StudyAPI(base_api.BaseAPI):
             accession_number = getattr(ds, 'AccessionNumber', None)
             study_id = getattr(ds, 'StudyID', None)
             study_description = getattr(ds, 'StudyDescription', None)
-            referring_physician_name = getattr(
-                ds, 'ReferringPhysicianName', None
-            )
-            name_of_physicians_reading_study = getattr(
-                ds, 'NameOfPhysiciansReadingStudy', ''
-            )
+            referring_physician_name = getattr(ds, 'ReferringPhysicianName', None)
+            name_of_physicians_reading_study = getattr(ds, 'NameOfPhysiciansReadingStudy', '')
 
             if isinstance(name_of_physicians_reading_study, list):
                 name_of_physicians_reading_study = '\\'.join(
                     name_of_physicians_reading_study
                 )
 
-            admitting_diagnoses_description = getattr(
-                ds, 'AdmittingDiagnosesDescription', None
-            )
+            admitting_diagnoses_description = getattr(ds, 'AdmittingDiagnosesDescription', None)
             patient_age = getattr(ds, 'PatientAge', None)
             patient_size = getattr(ds, 'PatientSize', None)
             patient_weight = getattr(ds, 'PatientWeight', None)
             occupation = getattr(ds, 'Occupation', None)
-            additional_patient_history = getattr(
-                ds, 'AdditionalPatientHistory', ''
-            )
+            additional_patient_history = getattr(ds, 'AdditionalPatientHistory', '')
             study = models.Study.create(
                 patient=patient,
                 study_instance_uid=study_instance_uid,
@@ -70,7 +64,7 @@ class StudyAPI(base_api.BaseAPI):
             self.log.debug('Create new study, Study Instance UID: %s', study_instance_uid)
             return study
 
-    def c_find(self, ds: pydicom.Dataset):
+    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
         """C-FIND request handler for Study level
 
         :param ds: C-FIND request

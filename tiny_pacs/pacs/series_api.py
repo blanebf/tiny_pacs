@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from typing import Generator
+
 import peewee
 import pydicom
 from pydicom.tag import Tag
@@ -8,7 +10,7 @@ from . import base_api
 
 
 class SeriesAPI(base_api.BaseAPI):
-    def c_store(self, study: models.Study, ds: pydicom.Dataset):
+    def c_store(self, study: peewee.Model, ds: pydicom.Dataset) -> peewee.Model:
         """C-STORE handler
 
         :param study: study reference
@@ -33,7 +35,7 @@ class SeriesAPI(base_api.BaseAPI):
             self.log.debug('Created new series, Series Instance UID: %s', series_instance_uid)
             return series
 
-    def c_find(self, ds: pydicom.Dataset):
+    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
         """C-FIND handler
 
         :param ds: C-FIND request

@@ -18,7 +18,7 @@ import enum
 import operator
 import logging
 
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Tuple, Union, Hashable
 
 
 class DefaultChannels(enum.Enum):
@@ -49,7 +49,7 @@ class EventBus:
     :ivar listeners: mapping event -> listeners
     :ivar log: event bus logger
     """
-    default_channels = [
+    default_channels: List[Hashable] = [
         DefaultChannels.ON_START,
         DefaultChannels.ON_STARTED,
         DefaultChannels.ON_EXIT
@@ -74,11 +74,11 @@ class EventBus:
         self._priorities = {}
         self.log = logging.getLogger(self.name())
 
-    def subscribe(self, channel: str, callback, priority=50):
+    def subscribe(self, channel: Hashable, callback, priority=50):
         """Subscribes a listener to the event channel
 
         :param channel: event channel name
-        :type channel: str
+        :type channel: Hashable
         :param callback: callback that will be called when event is fired
         :type callback: function
         :param priority: subscriber priority, defaults to 50
@@ -91,11 +91,11 @@ class EventBus:
             priority = getattr(callback, 'priority', 50)
         self._priorities[(channel, callback)] = priority
 
-    def unsubscribe(self, channel: str, callback):
+    def unsubscribe(self, channel: Hashable, callback):
         """Unsubscribes a listener from event channel
 
         :param channel: channel name
-        :type channel: str
+        :type channel: Hashable
         :param callback: subscriber
         :type callback: function
         """
@@ -104,13 +104,13 @@ class EventBus:
             listeners.discard(callback)
             del self._priorities[(channel, callback)]
 
-    def broadcast(self, channel: str, *args, **kwargs) -> List[Any]:
+    def broadcast(self, channel: Hashable, *args, **kwargs) -> List[Any]:
         """Broadcast the event to all listeners on the channel.
 
         Event is handled according to listeners priority.
 
         :param channel: event name
-        :type channel: str
+        :type channel: Hashable
         :return: list of results from all listeners
         :rtype: List[Any]
         """
@@ -123,7 +123,7 @@ class EventBus:
             results.append(result)
         return results
 
-    def broadcast_nothrow(self, channel: str, *args, **kwargs) -> List[Tuple[Any, bool]]:
+    def broadcast_nothrow(self, channel: Hashable, *args, **kwargs) -> List[Tuple[Any, bool]]:
         """Broadcast the event to all listeners on the channel.
 
         Event is handled according to listeners priority. In case one of the
@@ -131,7 +131,7 @@ class EventBus:
         would be appended to results
 
         :param channel: event name
-        :type channel: str
+        :type channel: Hashable
         :return: list of tuples. Each tuple would contain result from the
                  listener or exception, if it occured. Second value of the tuple
                  would be either `True` (if no exception occured) or `False` (
@@ -151,11 +151,11 @@ class EventBus:
                 results.append((result, False))
         return results
 
-    def send_one(self, channel: str, *args, **kwargs) -> Any:
+    def send_one(self, channel: Hashable, *args, **kwargs) -> Any:
         """Sends event to one listiner with highest priority
 
         :param channel: event name
-        :type channel: str
+        :type channel: Hashable
         :raises NoListenersError: raised when no listener found for specified event
         :return: result from a listiner with highest priority
         :rtype: Any
@@ -168,14 +168,14 @@ class EventBus:
             raise NoListenersError(msg)
         return listener(*args, **kwargs)
 
-    def send_any(self, channel: str, *args, **kwargs) -> Union[Any, None]:
+    def send_any(self, channel: Hashable, *args, **kwargs) -> Union[Any, None]:
         """Broadcast the specfied event and returns firts none `None` result
 
         If all listeners return `None` or no listeners present for specfied event
         method returns `None`
 
         :param channel: event name
-        :type channel: str
+        :type channel: Hashable
         :return: first none `None` result or `None`
         :rtype: Union[Any, None]
         """

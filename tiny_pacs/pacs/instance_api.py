@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
+from typing import Generator
+
+import peewee
 import pydicom
 from . import models
 from . import base_api
 
 class InstanceAPI(base_api.BaseAPI):
-    def c_store(self, series: models.Series, ds: pydicom.Dataset):
+    def c_store(self, series: peewee.Model, ds: pydicom.Dataset) -> peewee.Model:
         """C-STORE handler
 
         :param series: series reference
@@ -37,7 +40,7 @@ class InstanceAPI(base_api.BaseAPI):
             self.log.debug('Created new instance, SOP Instance UID: %s', sop_instance_uid)
             return instance
 
-    def c_find(self, ds: pydicom.Dataset):
+    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
         """C-FIND handler
 
         :param ds: C-FIND request

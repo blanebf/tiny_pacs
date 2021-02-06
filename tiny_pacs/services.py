@@ -138,9 +138,8 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
                 ts = context.supported_ts
                 break
         else:
-            msg = 'SOP Class UID {} or Transfer Syntax '\
-                  'is not supported {}'.format(sop_class, ts)
-            raise exceptions.NetDICOMError(msg)
+            err_msg = f'SOP Class UID {sop_class} or Transfer Syntax is not supported {ts}'
+            raise exceptions.NetDICOMError(err_msg)
         service = functools.partial(
             sopclass.storage_scu, asce,
             asceprovider.PContextDef(pc_id, sop_class, ts)

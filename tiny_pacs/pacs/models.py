@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+"""PACS Component database tables.
+
+
+"""
 import peewee
 
 

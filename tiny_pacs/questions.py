@@ -2,7 +2,7 @@
 from typing import Any, Dict, Iterator, List, Callable
 
 class Question:
-    def __init__(self, key, prompt: str, handler: Callable[Any],
+    def __init__(self, key, prompt: str, handler: Callable[[Any], Any],
                  repeatable=False, default: Any = None,
                  default_repr: str = None):
         self.key = key
@@ -25,7 +25,7 @@ class Question:
         return self.handler(self._value)
 
     @value.setter
-    def value(self, _value):
+    def value(self, _value: Any):
         if not _value:
             return
 

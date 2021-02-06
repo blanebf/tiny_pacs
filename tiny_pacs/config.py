@@ -1,25 +1,39 @@
 # -*- coding: utf-8 -*-
+"""Configuration system."""
 import json
 import os
+
+from typing import Any, Dict, IO, List, Type, Union
 
 from pydicom import uid
 from pynetdicom2 import uids
 import yaml
 
+from . import component
 from . import db
 from . import devices
 from . import pacs
 from . import storage
 
 
+ConfigInput = Union[str, List[str], IO[bytes], dict]
+
+
 class Config(dict):
+    """Config reader for Tiny PACS."""
+
     def __init__(self):
         super().__init__()
         self['components'] = {}
         self['ae'] = DEFAULT_AE_CONFIG.copy()
         self['log'] = DEFAULT_LOG_CONF.copy()
 
-    def update_config(self, _config):
+    def update_config(self, _config: ConfigInput):
+        """Read configuration or
+
+        :param _config: configuration to read.
+        :type _config: ConfigInput
+        """
         if isinstance(_config, list):
             for _conf in _config:
                 self.update_config(_conf)
@@ -32,41 +46,55 @@ class Config(dict):
                 _config = self._read_yaml(_config)
         elif hasattr(_config, 'read'):
             try:
-                _config = self._read_yaml(_config)
+                _config = yaml.load(_config)
             except Exception:   # pylint: disable=broad-except
-                _config = self._read_json(_config)
-            else:
-                _config = None
+                _config = json.load(_config)
+        else:
+            return
 
         self.ae.update(_config.get('ae', {}))
         self.log.update(_config.get('log', {}))
         self.components.update(_config.get('components', {}))
 
     @property
-    def ae(self):
+    def ae(self) -> dict:
+        """AE configuration.
+
+        :rtype: dict
+        """
         return self['ae']
 
     @property
-    def log(self):
+    def log(self) -> dict:
+        """Logging configuration.
+
+        :rtype: dict
+        """
         return self['log']
 
     @property
-    def components(self):
+    def components(self) -> dict:
+        """Components configuration
+
+        :rtype: dict
+        """
         if not self['components']:
             return DEFAULT_COMPONENTS
 
         return self['components']
 
-    def _read_yaml(self, file_name):
+    @staticmethod
+    def _read_yaml(file_name: str):
         with open(file_name) as fp:
             return yaml.load(fp)
 
-    def _read_json(self, file_name):
+    @staticmethod
+    def _read_json(file_name: str):
         with open(file_name) as fp:
             return json.load(fp)
 
 
-COMPONENT_REGISTRY = {
+COMPONENT_REGISTRY: Dict[str, Type[component.Component]] = {
     'Database': db.Database,
     'Devices': devices.Devices,
     'PACS': pacs.PACS,
@@ -111,7 +139,7 @@ DEFAULT_AE_CONFIG = {
     ]
 }
 
-DEFAULT_COMPONENTS = {
+DEFAULT_COMPONENTS: Dict[str, Dict[str, Any]] = {
     'Database': {'on': True},
     'Devices': {'on': True},
     'PACS': {'on': True},
