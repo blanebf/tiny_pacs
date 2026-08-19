@@ -9,25 +9,6 @@ from pynetdicom2 import statuses
 from .. import component, events
 from . import instance_api, models, patient_api, series_api, study_api
 
-#: Set of tags excluded from generating queries based on C-FIND-RQ
-EXCLUDED_ATTRS = set([
-    0x00080052, # Query/Retrieve Level
-    0x00080005, # Specific Character Set
-    0x00201200, # Number of Patient Related Studies
-    0x00201202, # Number of Patient Related Series
-    0x00201204, # Number of Patient Related Instances
-    0x00080061, # Modalities in Study
-    0x00080062, # SOP Classes in Study
-    0x00201070, # Other Study Numbers
-    0x00201206, # Number of Study Related Series
-    0x00201208, # Number of Study Related Instances
-    0x00201209  # Number of Series Related Instances
-])
-
-
-#: List of text VRs
-TEXT_VR = ['AE', 'CS', 'LO', 'LT', 'PN', 'SH', 'ST', 'UC', 'UR', 'UT', 'UI']
-
 
 class QRLevelRank(enum.Enum):
     """Rank of Query/Retrieve level"""

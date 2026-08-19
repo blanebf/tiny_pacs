@@ -236,7 +236,7 @@ class DICOMClient:
         ds = pydicom.Dataset()
         ds.StudyInstanceUID = study_uid
         ds.SeriesInstanceUID = series_uid
-        ds.SOPInstnaceUID = instance_uid
+        ds.SOPInstanceUID = instance_uid
         ds.QueryRetrieveLevel = 'IMAGE'
         self.aet.add_scu(sopclass.qr_move_scu)
         if asce is None:

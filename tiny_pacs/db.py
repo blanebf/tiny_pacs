@@ -175,5 +175,5 @@ class DBQuestionnaire:
                 'host': self.postgres_db_host.value,
                 'port': self.postgres_port.value,
                 'user': self.postgres_user.value,
-                'password': self.postgres_password
+                'password': self.postgres_password.value
             }

@@ -27,12 +27,13 @@ class Question:
 
     @value.setter
     def value(self, _value: Any):
-        if not _value:
+        if _value is None or _value == '':
             return
 
         if self.repeatable:
             self._value.append(_value)
-        self._value = _value
+        else:
+            self._value = _value
 
 
 class Questionnaire:
