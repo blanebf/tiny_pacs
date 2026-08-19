@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-from typing import Any, Dict, Iterator, List, Callable
+from typing import Any, Dict, Iterator, List, Callable, Union
 
 class Question:
     def __init__(self, key, prompt: str, handler: Callable[[Any], Any],
                  repeatable=False, default: Any = None,
-                 default_repr: str = None):
+                 default_repr: Union[str, None] = None):
         self.key = key
         self.prompt = prompt
         self.handler = handler

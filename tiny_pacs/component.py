@@ -1,24 +1,40 @@
-# -*- coding: utf-8 -*-
 """Base component implementation"""
 import logging
-from typing import Any, Dict, Hashable, List, Tuple
+from typing import Any, Callable, TypeVar
 
-from . import event_bus
+import trolleybus
+
 from . import questions
 
+TP = TypeVar('TP')
+TR = TypeVar('TR')
 
-class Component:
+
+class Component(trolleybus.EmitterMixin):
     """Base component class
 
-    Subscribes to common channels, sets up component logging and provides
-    various convinience methods
+    Subscribes to common lifecycle events, sets up component logging and
+    provides various convenience methods.
+
+    Emission shortcuts (``broadcast``, ``broadcast_nothrow``, ``send_one``,
+    ``send_any``) are provided by :class:`trolleybus.EmitterMixin`.
+
+    Unlike :class:`trolleybus.Subscriber`, component handlers are attached
+    immediately on construction instead of on :meth:`trolleybus.EventBus.start`.
+    This preserves two semantics tiny_pacs relies on:
+
+        * components override each other's handler methods freely (a deferred
+          attach scheme would require re-decorating every override);
+        * handlers are available during the very first ``OnStart`` broadcast,
+          which the :class:`~tiny_pacs.db.Database` component needs in order
+          to collect tables from other components.
 
     :ivar bus: event bus
     :ivar config: component configuration
     """
 
-    #: Component priority in the event bus. Default is 50
-    priority = 50
+    #: Component priority in the event bus. Higher priority runs first.
+    priority = trolleybus.DEFAULT_PRIORITY
 
     @classmethod
     def name(cls) -> str:
@@ -31,94 +47,68 @@ class Component:
         """
         return cls.__name__
 
-    def __init__(self, bus: event_bus.EventBus, config: Dict[str, Any]):
-        self.bus = bus
+    def __init__(self, bus: trolleybus.EventBus, config: dict[str, Any]):
+        super().__init__(bus)
         self.config = config
         self._logger = logging.getLogger(self.name())
 
-        self.subscribe(event_bus.DefaultChannels.ON_START, self.on_start)
-        self.subscribe(event_bus.DefaultChannels.ON_STARTED, self.on_started)
-        self.subscribe(event_bus.DefaultChannels.ON_EXIT, self.on_exit)
+        self.subscribe(trolleybus.OnStart, self._handle_start)
+        self.subscribe(trolleybus.OnStarted, self._handle_started)
+        self.subscribe(trolleybus.OnExit, self._handle_exit)
 
     @classmethod
     def interactive(cls) -> questions.Questionnaire:
-        """Returns interatctive questionnaire for component configuration
+        """Returns interactive questionnaire for component configuration
 
         :return: component configuration questionnaire
         :rtype: questions.Questionnaire
         """
         return questions.Questionnaire([])
 
+    def _handle_start(self, _: None) -> None:
+        self.on_start()
+
+    def _handle_started(self, _: None) -> None:
+        self.on_started()
+
+    def _handle_exit(self, _: None) -> None:
+        self.on_exit()
+
     def on_start(self):
-        """Handles 'on-start' event."""
+        """Handles `OnStart` event."""
         self.log_info(f'Component {self.name()} starting...')
 
     def on_started(self):
-        """Handles 'on-started' event."""
+        """Handles `OnStarted` event."""
         self.log_info(f'Component {self.name()} started')
 
     def on_exit(self):
-        """Handles 'on-exit' event."""
+        """Handles `OnExit` event."""
         self.log_info(f'Component {self.name()} exiting...')
 
-    def subscribe(self, channel: Hashable, callback, priority: int = None):
-        """Subscribes to an event channel
+    def subscribe(
+            self,
+            event: type[trolleybus.Event[TP, TR]],
+            callback: Callable[[TP], TR],
+            priority: int | None = None
+    ) -> Callable[[TP], TR]:
+        """Subscribes to an event
 
-        :param channel: event name
-        :type channel: Hashable
-        :param callback: event handler
+        :param event: event class
+        :type event: type[trolleybus.Event]
+        :param callback: event handler. Receives a single payload argument
         :type callback: function
-        :param priority: subscription priority, defaults to None
+        :param priority: subscription priority, defaults to component priority
         :type priority: int, optional
         """
         if priority is None:
             priority = self.priority
-        self.bus.subscribe(channel, callback, priority)
-
-    def broadcast(self, channel: Hashable, *args, **kwargs) -> List[Any]:
-        """Broadcasts the event to all listeners
-
-        :param channel: event name
-        :type channel: Hashable
-        :return: list of results from all listeners
-        :rtype: List[Any]
-        """
-        return self.bus.broadcast(channel, *args, **kwargs)
-
-    def broadcast_nothrow(self, channel: Hashable, *args, **kwargs) -> List[Tuple[Any, bool]]:
-        """Broadcast the event to all listeners on the channel. Method does not raise an exception
-
-        :param channel: event name
-        :type channel: Hashable
-        :return: list of results from all listeners
-        :rtype: List[Tuple[Any, bool]]
-        """
-        return self.bus.broadcast_nothrow(channel, *args, **kwargs)
-
-    def send_one(self, channel: Hashable, *args, **kwargs) -> Any:
-        """Sends event to one listiner with highest priority
-
-        :param channel: event name
-        :type channel: Hashable
-        :return: result from a listiner with highest priority
-        :rtype: Any
-        """
-        return self.bus.send_one(channel, *args, **kwargs)
-
-    def send_any(self, channel: Hashable, *args, **kwargs) -> Any:
-        """Broadcast the specfied event and returns firts none `None` result
-
-        :param channel: event name
-        :type channel: Hashable
-        :return: first none `None` result or `None`
-        :rtype: Any
-        """
-        return self.bus.send_any(channel, *args, **kwargs)
+        return self.bus.subscribe(event, callback, priority)
 
     def log(self, level: int, msg, *args, **kwargs):
         """Logger wrapper
 
-        :param level: logging leve
+        :param level: logging level
         :type level: int
         :param msg: logging message
         """

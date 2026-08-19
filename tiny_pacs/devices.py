@@ -1,31 +1,19 @@
-# -*- coding: utf-8 -*-
-import enum
+import trolleybus
 
-from pynetdicom2 import asceprovider
-from pynetdicom2 import pdu
-
-from . import ae
 from . import component
-from . import event_bus
+from . import events
 from . import questions
 
 
-class DevicesChannels(enum.Enum):
-    """Device component events."""
-
-    #: Get device configuration by AE Title
-    DEVICE_BY_AE = 'device-by-ae'
-
-
 class Devices(component.Component):
-    def __init__(self, bus: event_bus.EventBus, config: dict):
+    def __init__(self, bus: trolleybus.EventBus, config: dict):
         super().__init__(bus, config)
         self.devices = config.get('devices', {})
         self.auto_add = config.get('auto_add', True)
         self.default_port = config.get('default_port', 11112)
         if self.auto_add:
-            self.subscribe(ae.AEChannels.ASSOC, self.add_device_from_asce)
-        self.subscribe(DevicesChannels.DEVICE_BY_AE, self.device_by_ae)
+            self.subscribe(events.Assoc, self.add_device_from_asce)
+        self.subscribe(events.DeviceByAE, self.device_by_ae)
 
     @classmethod
     def interactive(cls):
@@ -52,10 +40,14 @@ class Devices(component.Component):
     def device_by_ae(self, _ae: str):
         return self.devices.get(_ae)
 
-    def add_device_from_asce(self, asce: asceprovider.AssociationAcceptor,
-                             assoc: pdu.AAssociateRqPDU):
+    def add_device_from_asce(self, payload: events.AssocPayload):
         # TODO add C-ECHO, to check availability
-        remote_addr, _ = asce.client_address
+        asce = payload.asce
+        assoc = payload.assoc
+        # The association no longer exposes the peer address directly; obtain
+        # it from the DUL provider socket instead.
+        dul_socket = asce.dul.dul_socket
+        remote_addr = dul_socket.getpeername()[0] if dul_socket else ''
         calling_ae_title = assoc.calling_ae_title.strip()
         if calling_ae_title in self.devices:
             return
@@ -77,3 +69,7 @@ class DeviceQuestion(questions.Question):
             return {}
         devices = (self.handler(v) for v in self._value)
         return {d['aet']: d for d in devices}
+
+    @value.setter
+    def value(self, _value):
+        questions.Question.value.fset(self, _value)  # type: ignore[attr-defined]

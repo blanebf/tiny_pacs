@@ -26,10 +26,11 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-pydicom = "^2.0"
-pynetdicom2 = "^0.9.3"
-peewee = "^3.13"
-PyYAML = "^5.3"
+pydicom = "^3.0"
+pynetdicom2 = "^0.9.8"
+peewee = "^4.3"
+PyYAML = "^6.0"
+trolleybus = "^0.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"

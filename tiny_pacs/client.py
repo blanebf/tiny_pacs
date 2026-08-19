@@ -5,6 +5,7 @@ import logging
 from typing import Iterator, Union
 
 import pydicom
+import trolleybus
 
 from pydicom import filereader
 from pydicom import uid
@@ -12,17 +13,8 @@ from pynetdicom2 import applicationentity, asceprovider
 from pynetdicom2 import sopclass
 from pynetdicom2 import uids
 
-from . import ae
 from . import component
-from . import devices
-from . import event_bus
-
-
-class ClientChannels(enum.Enum):
-    """Client channel events."""
-
-    #: Request DICOM client
-    GET_CLIENT = 'get-client'
+from . import events
 
 
 class FindRoot(enum.Enum):
@@ -80,9 +72,9 @@ class DestinationUnknownError(Exception):
 class Client(component.Component):
     """Simple component that can create DICOM Client for provided AE Title."""
 
-    def __init__(self, bus: event_bus.EventBus, config: dict):
+    def __init__(self, bus: trolleybus.EventBus, config: dict):
         super().__init__(bus, config)
-        self.subscribe(ClientChannels.GET_CLIENT, self.get)
+        self.subscribe(events.GetClient, self.get)
 
     def get(self, remote_aet: str):
         """Gets a DICOM client for provided AE Title
@@ -94,10 +86,10 @@ class Client(component.Component):
         :return: DICOM Client
         :rtype: DICOMClient
         """
-        remote_ae = self.send_any(devices.DevicesChannels.DEVICE_BY_AE, remote_aet)
+        remote_ae = self.send_any(events.DeviceByAE, remote_aet)
         if not remote_ae:
             raise DestinationUnknownError()
-        local_ae = self.send_one(ae.AEChannels.MAIN_AET)
+        local_ae = self.send_one(events.MainAET, None)
         self.log_info('Getting DICOM client for %r', remote_ae)
         return DICOMClient(local_ae, remote_ae)
 
@@ -163,8 +155,9 @@ class DICOMClient:
 
                 yield result
 
-    def store(self, ds: Union[pydicom.Dataset, str], sop_class_uid: uid.UID = None,
-              transfer_syntax: uid.UID = None):
+    def store(self, ds: Union[pydicom.Dataset, str],
+              sop_class_uid: Union[uid.UID, None] = None,
+              transfer_syntax: Union[uid.UID, None] = None):
         """Send a C-STORE request with provided dataset
 
         :param ds: dataset to store (filename or dataset itself)
@@ -205,7 +198,8 @@ class DICOMClient:
             self.log.error('C-STORE operation failed %r', status)
             raise CStoreError(status)
 
-    def move(self, ds: pydicom.Dataset, root=MoveRoot.STUDY, dest_ae: str = None):
+    def move(self, ds: pydicom.Dataset, root=MoveRoot.STUDY,
+             dest_ae: Union[str, None] = None):
         """Makes a C-MOVE request to destination AE Title (or self, if not specified)
 
         :param ds: C-MOVE request dataset
@@ -225,8 +219,8 @@ class DICOMClient:
             self._move(asce, ds, dest_ae, root)
 
     def move_instance(self, study_uid: uid.UID, series_uid: uid.UID,
-                      instance_uid: uid.UID, dest_ae: str = None,
-                      asce: asceprovider.AssociationRequester = None):
+                      instance_uid: uid.UID, dest_ae: Union[str, None] = None,
+                      asce: Union[asceprovider.AssociationRequester, None] = None):
         """Makes a C-MOVE request for a single instance to destination AE Title (or self, if not
         specified)
 

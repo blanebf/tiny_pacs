@@ -5,7 +5,7 @@ import peewee
 import pydicom
 from pydicom.tag import Tag
 
-from .. import db
+from .. import events
 
 from . import models
 from . import base_api
@@ -91,7 +91,7 @@ class StudyAPI(base_api.BaseAPI):
             _tag = Tag(0x0008, 0x0061)
             skipped.add(_tag)
             # TODO: Add modalities in study filter
-            agg_fun = self.bus.send_one(db.DBChannels.STRING_AGG)
+            agg_fun = self.bus.send_one(events.StringAgg, None)
             select.append(
                 agg_fun(models.Series.modality, '\\').alias('modalities_in_study')
             )
@@ -101,7 +101,7 @@ class StudyAPI(base_api.BaseAPI):
         if 'SOPClassesInStudy' in ds:
             _tag = Tag(0x0008, 0x0062)
             skipped.add(_tag)
-            agg_fun = self.bus.send_one(db.DBChannels.STRING_AGG)
+            agg_fun = self.bus.send_one(events.StringAgg, None)
             select.append(
                 agg_fun(models.Instance.sop_class_uid, '\\').alias('sop_classes_in_study')
             )

@@ -1,87 +1,88 @@
-# -*- coding: utf-8 -*-
 import pytest
+
+import trolleybus
 
 from pydicom.uid import ImplicitVRLittleEndian
 from pydicom import dataset
-from pynetdicom2.asceprovider import PContextDef
+from pynetdicom2 import fsm
 from pynetdicom2 import uids
 from pynetdicom2 import statuses
 from pynetdicom2 import pdu
 
 from tiny_pacs import ae
 from tiny_pacs import devices
-from tiny_pacs import event_bus
+from tiny_pacs import events
 
 
 @pytest.fixture
 def ae_title():
-    bus = event_bus.EventBus()
-    _ae = ae.AE(bus, {})
+    bus = trolleybus.EventBus()
+    # Tests exercise message handling only, so no need to bind the port
+    _ae = ae.AE(bus, {}, bind_and_activate=False)
     yield _ae
-    _ae.server_close()
 
 
-def test_assoc(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
-    def callback(_, assoc: pdu.AAssociateRqPDU):
+def test_assoc(ae_title: ae.AE):
+    def callback(payload: events.AssocPayload):
         # Fill with proper assoc object
-        assert assoc.calling_ae_title == 'TEST'
-        assert assoc.called_ae_title == 'TINY_PACS'
-    ae_title.bus.subscribe(ae.AEChannels.ASSOC, callback)
+        assert payload.assoc.calling_ae_title == 'TEST'
+        assert payload.assoc.called_ae_title == 'TINY_PACS'
+    ae_title.bus.subscribe(events.Assoc, callback)
     asce_rq = pdu.AAssociateRqPDU('TINY_PACS', 'TEST', [])
     ae_title.on_association_request(None, asce_rq)
 
 
-def test_find(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
-    def callback(context, ds):
-        assert ctx == context
-        assert ds == _ds
-        return [(statuses.C_FIND_PENDING, dataset.Dataset()),
-                (statuses.C_FIND_PENDING, dataset.Dataset())]
+def test_find(ae_title: ae.AE):
+    def callback(payload: events.FindPayload):
+        assert ctx == payload.context
+        assert ds == payload.ds
+        return [(dataset.Dataset(), statuses.C_FIND_PENDING),
+                (dataset.Dataset(), statuses.C_FIND_PENDING)]
 
-    ctx = PContextDef(1, uids.STUDY_ROOT_FIND_SOP_CLASS, ImplicitVRLittleEndian)
-    _ds = dataset.Dataset()
-    ae_title.bus.subscribe(ae.AEChannels.FIND, callback)
-    results = ae_title.on_receive_find(ctx, _ds)
-    for status, ds in results:
+    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_FIND_SOP_CLASS, ImplicitVRLittleEndian)
+    ds = dataset.Dataset()
+    ae_title.bus.subscribe(events.Find, callback)
+    results = ae_title.on_receive_find(ctx, ds)
+    for _ds, status in results:
         assert status.is_pending
-        assert ds is not None
+        assert _ds is not None
 
 
 def test_store_success(ae_title: ae.AE):
-    def callback(context, ds):
-        assert ctx == context
-        assert ds == _ds
+    def callback(payload: events.StorePayload):
+        assert ctx == payload.context
+        assert ds == payload.ds
         return statuses.SUCCESS
 
-    ctx = PContextDef(1, uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian)
-    _ds = dataset.Dataset()
-    ae_title.bus.subscribe(ae.AEChannels.STORE, callback)
-    status = ae_title.on_receive_store(ctx, _ds)
+    ctx = fsm.PContextDef(1, uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian)
+    ds = dataset.Dataset()
+    ae_title.bus.subscribe(events.Store, callback)
+    status = ae_title.on_receive_store(ctx, ds)
     assert status.is_success
 
 
-def test_store_failure(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
-    def callback(context, ds):
-        assert ctx == context
-        assert ds == _ds
+def test_store_failure(ae_title: ae.AE):
+    def callback(payload: events.StorePayload):
+        assert ctx == payload.context
+        assert ds == payload.ds
         return statuses.C_MOVE_UNABLE_TO_PROCESS
 
-    ctx = PContextDef(1, uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian)
-    _ds = dataset.Dataset()
-    ae_title.bus.subscribe(ae.AEChannels.STORE, callback)
-    status = ae_title.on_receive_store(ctx, _ds)
+    ctx = fsm.PContextDef(1, uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian)
+    ds = dataset.Dataset()
+    ae_title.bus.subscribe(events.Store, callback)
+    status = ae_title.on_receive_store(ctx, ds)
     assert status.is_failure
 
 
-def test_move(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
-    def callback(context, ds, destination):
-        assert destination == 'REMOTE_PACS'
-        assert ctx == context
-        assert ds == _ds
+def test_move(ae_title: ae.AE):
+    def callback(payload: events.MovePayload):
+        assert payload.destination == 'REMOTE_PACS'
+        assert ctx == payload.context
+        assert ds == payload.ds
         return [dataset.Dataset(), dataset.Dataset()]
 
-    ctx = PContextDef(1, uids.STUDY_ROOT_MOVE_SOP_CLASS, ImplicitVRLittleEndian)
-    _ds = dataset.Dataset()
+    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_MOVE_SOP_CLASS, ImplicitVRLittleEndian)
+    ds = dataset.Dataset()
     _devices = devices.Devices(
         ae_title.bus,
         {
@@ -92,6 +93,10 @@ def test_move(ae_title: ae.AE):  # pylint: disable=redefined-outer-name
             }
         }
     )
-    ae_title.bus.subscribe(ae.AEChannels.MOVE, callback)
-    results = ae_title.on_receive_move(ctx, _ds, 'REMOTE_PACS')
+    ae_title.bus.subscribe(events.Move, callback)
+    remote_ae, nop, results = ae_title.on_receive_move(ctx, ds, 'REMOTE_PACS')
+    assert nop == 2
     assert len(list(results)) == 2
+    assert remote_ae.aet == 'REMOTE_PACS'
+    assert remote_ae.address == '127.0.0.1'
+    assert remote_ae.port == 11112

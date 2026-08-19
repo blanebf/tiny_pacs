@@ -2,20 +2,21 @@
 import uuid
 import pytest
 
+import trolleybus
+
 from pydicom import Dataset
 
 from tiny_pacs import db
-from tiny_pacs import event_bus
 from tiny_pacs import pacs
 from tiny_pacs.pacs import models
 
 
 @pytest.fixture
 def pacs_srv():
-    bus = event_bus.EventBus()
+    bus = trolleybus.EventBus()
     _db = db.Database(bus, {'db_name': str(uuid.uuid4())})
     _pacs_srv = pacs.PACS(bus, {})
-    bus.broadcast(event_bus.DefaultChannels.ON_START)
+    bus.start()
     with _db.atomic():
         patient = models.Patient.create(
             patient_id='test1',

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Provides main server implementation.
 
 Initializes all components and starts listening for incoming connections
@@ -6,13 +5,13 @@ Initializes all components and starts listening for incoming connections
 import logging
 import logging.config
 import time
-import threading
 from typing import Iterator
+
+import trolleybus
 
 from . import ae
 from . import component
 from . import config
-from . import event_bus
 
 
 class Server:
@@ -34,20 +33,21 @@ class Server:
         """
         self.config = _config
         logging.config.dictConfig(self.config.log)
-        self.bus = event_bus.EventBus()
+        self.bus = trolleybus.EventBus()
         self.ae = None
-        self.components = list(self.initalize_components())
+        self.components = list(self.initialize_components())
 
     def start(self):
         """Starts the server.
 
-        Broadcasts `ON_START` and `ON_STARTED` events.
+        Emits `OnStart` and `OnStarted` events via
+        :meth:`trolleybus.EventBus.start` and starts the AE serving thread.
         """
-        self.bus.broadcast(event_bus.DefaultChannels.ON_START)
+        self.bus.start()
         self.ae = ae.AE(self.bus, self.config.ae)
-        threading.Thread(target=self.ae.serve_forever).start()
-        # TODO: Wait for actual AE to start
-        self.bus.broadcast(event_bus.DefaultChannels.ON_STARTED)
+        # AE binds its port at construction time; entering the context
+        # manager starts the serving thread.
+        self.ae.__enter__()
 
     def start_with_block(self):
         """Starts the server and blocks current thread."""
@@ -65,12 +65,15 @@ class Server:
     def exit(self):
         """Handles server exit.
 
-        Broadcasts `ON_EXIT` event.
+        Emits `OnExit` event via :meth:`trolleybus.EventBus.stop` (listener
+        exceptions are suppressed and returned as
+        :class:`trolleybus.ListenerResult` objects) and stops the AE.
         """
-        self.bus.broadcast_nothrow(event_bus.DefaultChannels.ON_EXIT)
-        self.ae.quit()
+        self.bus.stop()
+        if self.ae is not None:
+            self.ae.quit()
 
-    def initalize_components(self) -> Iterator[component.Component]:
+    def initialize_components(self) -> Iterator[component.Component]:
         """Component initialization
 
         :yield: initializes components
@@ -85,7 +88,7 @@ class Server:
             factory = config.COMPONENT_REGISTRY.get(_component)
             if factory is None:
                 # TODO: add dynamic component loading
-                pass
+                logging.error('Unknown component %s, skipping', _component)
+                continue
 
-            _component = factory(self.bus, _config)
-            yield _component
+            yield factory(self.bus, _config)

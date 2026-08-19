@@ -3,17 +3,18 @@ import uuid
 import pydicom
 import pytest
 
+import trolleybus
+
 from pydicom import uid
 from pynetdicom2 import applicationentity
 from pynetdicom2 import sopclass
 from pynetdicom2 import statuses
 from pynetdicom2 import uids
 
-from tiny_pacs import ae
 from tiny_pacs import client
 from tiny_pacs import config
 from tiny_pacs import devices
-from tiny_pacs import event_bus
+from tiny_pacs import events
 from tiny_pacs import server
 
 @pytest.fixture
@@ -33,10 +34,10 @@ def pacs():
 
 @pytest.fixture
 def pacs_client():
-    def main_aet():
+    def main_aet(_):
         return 'TEST_CLIENT'
-    bus = event_bus.EventBus()
-    bus.subscribe(ae.AEChannels.MAIN_AET, main_aet)
+    bus = trolleybus.EventBus()
+    bus.subscribe(events.MainAET, main_aet)
     _devices = devices.Devices(bus, {
         'devices': {
             'TINY_PACS': {'aet': 'TINY_PACS', 'address': '127.0.0.1', 'port': 11113}

@@ -1,13 +1,14 @@
-# -*- coding: utf-8 -*-
 import enum
 from itertools import chain
 from typing import Any, Dict
 
 import peewee
-from playhouse import pool
+import trolleybus
+
+from playhouse import pool  # type: ignore[import-untyped]
 
 from . import component
-from . import event_bus
+from . import events
 from . import questions
 
 
@@ -21,19 +22,6 @@ class DBDrivers(enum.Enum):
     POSTGRES = 'postgres'
 
 
-class DBChannels(enum.Enum):
-    """Available DB channel messages."""
-
-    #: Get an atomic transaction
-    ATOMIC = 'db-atomic'
-
-    #: Request a list of available tables from other components
-    TABLES = 'db-get-tables'
-
-    #: Requests string aggregate function
-    STRING_AGG = 'db-string-agg'
-
-
 class Database(component.Component):
     """DB component
 
@@ -41,18 +29,18 @@ class Database(component.Component):
     """
     # TODO: Add thread locking for SQLite, to prevent timeout errors
 
-    def __init__(self, bus: event_bus.EventBus, config: Dict[str, Any]):
+    def __init__(self, bus: trolleybus.EventBus, config: Dict[str, Any]):
         """Initializes component
 
         :param bus: event bus
-        :type bus: event_bus.EventBus
+        :type bus: trolleybus.EventBus
         :param config: component config
         :type config: dict
         """
         super().__init__(bus, config)
-        self.subscribe(DBChannels.ATOMIC, self.atomic)
-        self.subscribe(DBChannels.STRING_AGG, self.string_agg_func)
-        self.db = None
+        self.subscribe(events.Atomic, self.atomic)
+        self.subscribe(events.StringAgg, self.string_agg_func)
+        self.db: peewee.Database | None = None
 
     @classmethod
     def interactive(cls):
@@ -76,22 +64,23 @@ class Database(component.Component):
             raise ValueError('Unsupported DB driver')
 
         # Request all available tables
-        tables = self.broadcast(DBChannels.TABLES)
+        tables = self.broadcast(events.Tables, None)
         tables = list(chain.from_iterable(tables))
 
         # Binds all tables to Database instance
         self.db.bind(tables)
         self._create_tables(tables)
 
-    def atomic(self):
+    def atomic(self, _: None = None):
         """Create an atomic transaction
 
         :return: atomic transaction
-        :rtype: [type]
         """
+        if self.db is None:
+            raise RuntimeError('Database is not initialized')
         return self.db.atomic()
 
-    def string_agg_func(self):
+    def string_agg_func(self, _: None = None):
         if isinstance(self.db, peewee.SqliteDatabase):
             return getattr(peewee.fn, 'group_concat')
         if isinstance(self.db, peewee.PostgresqlDatabase):

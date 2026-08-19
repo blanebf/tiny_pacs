@@ -7,7 +7,7 @@ from typing import Any, Dict, IO, List, Type, Union
 
 from pydicom import uid
 from pynetdicom2 import uids
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from . import component
 from . import db
@@ -34,6 +34,7 @@ class Config(dict):
         :param _config: configuration to read.
         :type _config: ConfigInput
         """
+        data: dict | None
         if isinstance(_config, list):
             for _conf in _config:
                 self.update_config(_conf)
@@ -41,20 +42,24 @@ class Config(dict):
         elif isinstance(_config, str):
             _, ext = os.path.splitext(_config)
             if ext == '.json':
-                _config = self._read_json(_config)
+                data = self._read_json(_config)
             else:
-                _config = self._read_yaml(_config)
+                data = self._read_yaml(_config)
         elif hasattr(_config, 'read'):
             try:
-                _config = yaml.load(_config)
+                data = yaml.safe_load(_config)
             except Exception:   # pylint: disable=broad-except
-                _config = json.load(_config)
+                data = json.load(_config)
+        elif isinstance(_config, dict):
+            data = _config
         else:
             return
 
-        self.ae.update(_config.get('ae', {}))
-        self.log.update(_config.get('log', {}))
-        self.components.update(_config.get('components', {}))
+        if not data:
+            return
+        self.ae.update(data.get('ae', {}))
+        self.log.update(data.get('log', {}))
+        self.components.update(data.get('components', {}))
 
     @property
     def ae(self) -> dict:
@@ -86,7 +91,7 @@ class Config(dict):
     @staticmethod
     def _read_yaml(file_name: str):
         with open(file_name) as fp:
-            return yaml.load(fp)
+            return yaml.safe_load(fp)
 
     @staticmethod
     def _read_json(file_name: str):

@@ -2,8 +2,7 @@
 import logging
 import peewee
 import pydicom
-
-from .. import event_bus
+import trolleybus
 
 
 #: Set of tags excluded from generating queries based on C-FIND-RQ
@@ -31,7 +30,7 @@ class BaseAPI:
     def name(cls):
         return cls.__name__
 
-    def __init__(self, bus: event_bus.EventBus):
+    def __init__(self, bus: trolleybus.EventBus):
         self.bus = bus
         self.log = logging.getLogger(self.name())
 

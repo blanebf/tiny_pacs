@@ -4,13 +4,11 @@ from itertools import chain
 from typing import Iterator
 
 import pydicom
+import trolleybus
 from pynetdicom2 import statuses
 
-from .. import ae
 from .. import component
-from .. import db
-from .. import event_bus
-from .. import storage
+from .. import events
 
 from . import models
 from . import patient_api
@@ -69,21 +67,22 @@ class PACS(component.Component):
 
     Provides handling to the following events:
 
-        * :attr:`~tiny_pacs.ae.AEChannels.STORE`
-        * :attr:`~tiny_pacs.ae.AEChannels.FIND`
-        * :attr:`~tiny_pacs.ae.AEChannels.MOVE`
-        * :attr:`~tiny_pacs.ae.AEChannels.COMMITMENT`
+        * :class:`~tiny_pacs.events.Store`
+        * :class:`~tiny_pacs.events.Find`
+        * :class:`~tiny_pacs.events.Move`
+        * :class:`~tiny_pacs.events.Get`
+        * :class:`~tiny_pacs.events.Commitment`
 
     Component also handles all relevant DB interactions, except for keeping
     track of stored datasets. That function is relegated to components in
     :module:`~tiny_pacs.storage`
     """
 
-    def __init__(self, bus: event_bus.EventBus, config: dict):
+    def __init__(self, bus: trolleybus.EventBus, config: dict):
         """Component initialization
 
         :param bus: event bus
-        :type bus: event_bus.EventBus
+        :type bus: trolleybus.EventBus
         :param config: component configuration
         :type config: dict
         """
@@ -93,15 +92,14 @@ class PACS(component.Component):
         self.series_api = series_api.SeriesAPI(bus)
         self.instance_api = instance_api.InstanceAPI(bus)
 
-        self.subscribe(ae.AEChannels.STORE, self.on_store)
-        self.subscribe(ae.AEChannels.FIND, self.on_find)
-        self.subscribe(ae.AEChannels.MOVE, self.on_move)
-        self.subscribe(ae.AEChannels.GET, self.on_get)
-        self.subscribe(ae.AEChannels.COMMITMENT, self.on_commitment)
-        self.subscribe(db.DBChannels.TABLES, self.tables)
+        self.subscribe(events.Store, self.on_store)
+        self.subscribe(events.Find, self.on_find)
+        self.subscribe(events.Move, self.on_move)
+        self.subscribe(events.Get, self.on_get)
+        self.subscribe(events.Commitment, self.on_commitment)
+        self.subscribe(events.Tables, self.tables)
 
-    @staticmethod
-    def tables():
+    def tables(self, _: None = None):
         """Returns a list of tables for DB component
 
         :return: list of tables used by this component
@@ -114,91 +112,84 @@ class PACS(component.Component):
 
         :return: atomic transaction
         """
-        return self.send_one(db.DBChannels.ATOMIC)
+        return self.send_one(events.Atomic, None)
 
-    def on_store(self, context, ds):
+    def on_store(self, payload: events.StorePayload):
         """Handling of incoming storage request
 
-        :param context: presentation context
-        :type context: pynetdicom2.asceprovider.PContextDef
-        :param ds: incoming dataset
-        :type ds: file
+        :param payload: presentation context and incoming dataset
+        :type payload: events.StorePayload
         :return: C-STORE handling status
         :rtype: pynetdicom2.statuses.Status
         """
+        context = payload.context
         self.log_info('Handling store request (%r)', context)
         try:
-            ds = pydicom.dcmread(ds, stop_before_pixels=True)
+            ds = pydicom.dcmread(payload.ds, stop_before_pixels=True)
             self.c_store(ds)
         except Exception as error:  # pylint: disable=broad-except
             self.log_exception(f'Failed to store dataset: {error}')
-            self.broadcast(storage.StorageChannels.ON_STORE_FAILURE, ds)
-            return statuses.C_STORE_CANNON_UNDERSTAND
+            self.broadcast(events.StoreFailure, ds)
+            return statuses.C_STORE_CANNOT_UNDERSTAND
         else:
             self.log_info('Dataset successfully stored (%r)', context)
-            self.broadcast(storage.StorageChannels.ON_STORE_DONE, ds)
+            self.broadcast(events.StoreDone, ds)
             return statuses.SUCCESS
 
-    def on_find(self, _, ds: pydicom.Dataset):
+    def on_find(self, payload: events.FindPayload):
         """Handling of incoming find request
 
-        :param _: presentation context
-        :type _: pynetdicom2.asceprovider.PContextDef
-        :param ds: incoming dataset
-        :type ds: pydicom.Dataset
+        :param payload: presentation context and incoming dataset
+        :type payload: events.FindPayload
         :yield: tuple of find result and pending status
         :rtype: tuple
         """
-        results = self.c_find(ds)
+        results = self.c_find(payload.ds)
         yield from ((r, statuses.C_FIND_PENDING) for r in results)
 
-    def on_move(self, context, ds: pydicom.Dataset, destination: str):
+    def on_move(self, payload: events.MovePayload):
         """Handling of incoming move request
 
-        :param context: presentation context
-        :type context: pynetdicom2.asceprovider.PContextDef
-        :param ds: incoming dataset
-        :type ds: pydicom.Dataset
-        :param destination: move destination
-        :type destination: str
+        :param payload: presentation context, incoming dataset and move
+                        destination
+        :type payload: events.MovePayload
         :return: list of tuples: SOP Class UID, Transfer Syntax and either
                  filename or dataset
         :rtype: list
         """
-        self.log_info('Handling move request to %s (%r)', destination, context)
-        instances = [uid for _, _, uid in self.c_move_get_instances(ds)]
+        destination = payload.destination
+        self.log_info('Handling move request to %s (%r)', destination, payload.context)
+        instances = [uid for _, _, uid in self.c_move_get_instances(payload.ds)]
         self.log_debug('Moving instances: %r', instances)
-        results = self.broadcast(storage.StorageChannels.ON_GET_FILES, instances)
+        results = self.broadcast(events.GetFiles, instances)
         return list(chain.from_iterable(results))
 
-    def on_get(self, context, ds: pydicom.Dataset):
+    def on_get(self, payload: events.GetPayload):
         """Handling of incoming get request
 
-        :param context: presentation context
-        :type context: pynetdicom2.asceprovider.PContextDef
-        :param ds: incoming dataset
-        :type ds: pydicom.Dataset
+        :param payload: presentation context and incoming dataset
+        :type payload: events.GetPayload
         :return: list of tuples: SOP Class UID, Transfer Syntax and either
                  filename or dataset
         :rtype: list
         """
-        self.log_info('Handling get request (%r)', context)
-        instances = [uid for _, _, uid in self.c_move_get_instances(ds)]
+        self.log_info('Handling get request (%r)', payload.context)
+        instances = [uid for _, _, uid in self.c_move_get_instances(payload.ds)]
         self.log_debug('Getting instances: %r', instances)
-        results = self.broadcast(storage.StorageChannels.ON_GET_FILES, instances)
+        results = self.broadcast(events.GetFiles, instances)
         return list(chain.from_iterable(results))
 
     def on_commitment(self, uids: list):
         """Handling of incoming storage commitment request
 
-        :param uids: list of tuple (SOP Instance UID, SOP Class UID)
+        :param uids: list of tuple (SOP Class UID, SOP Instance UID)
         :type uids: list
         :return: tuple of two list: successes and failures
         :rtype: tuple
         """
         self.log_info('Handling Storage Commitment')
         self.log_debug('Verifying %r instances', uids)
-        results = self.broadcast(storage.StorageChannels.ON_STORE_VERIFY, uids)
+        results = self.broadcast(events.StoreVerify, uids)
         success = chain.from_iterable(s for s, _ in results)
         failure = chain.from_iterable(f for _, f in results)
         return list(success), list(failure)
