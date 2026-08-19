@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from typing import Generator
+from typing import Iterator
 
 import peewee
 import pydicom
@@ -40,7 +40,7 @@ class InstanceAPI(base_api.BaseAPI):
             self.log.debug('Created new instance, SOP Instance UID: %s', sop_instance_uid)
             return instance
 
-    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
+    def c_find(self, ds: pydicom.Dataset) -> Iterator[pydicom.Dataset]:
         """C-FIND handler
 
         :param ds: C-FIND request

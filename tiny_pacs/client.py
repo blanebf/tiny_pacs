@@ -2,7 +2,7 @@
 """DICOM Client component implementation."""
 import enum
 import logging
-from typing import Generator, Union
+from typing import Iterator, Union
 
 import pydicom
 
@@ -136,7 +136,7 @@ class DICOMClient:
                 self.log.error('C-ECHO failed %r', status)
                 raise CEchoError(status)
 
-    def find(self, ds: pydicom.Dataset, root=FindRoot.STUDY) -> Generator[pydicom.Dataset]:
+    def find(self, ds: pydicom.Dataset, root=FindRoot.STUDY) -> Iterator[pydicom.Dataset]:
         """Makes a Q/R C-FIND request
 
         :param ds: C-FIND request (search parameters)

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from typing import Generator
+from typing import Iterator
 
 import peewee
 import pydicom
@@ -56,7 +56,7 @@ class PatientAPI(base_api.BaseAPI):
             self.log.debug('Created new patient, Patient ID: %s', patient_id)
         return patient
 
-    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
+    def c_find(self, ds: pydicom.Dataset) -> Iterator[pydicom.Dataset]:
         """C-FIND request handler for Patient level
 
         :param ds: C-FIND request

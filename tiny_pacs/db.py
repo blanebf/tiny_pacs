@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import enum
 from itertools import chain
+from typing import Any, Dict
 
 import peewee
 from playhouse import pool
@@ -40,7 +41,7 @@ class Database(component.Component):
     """
     # TODO: Add thread locking for SQLite, to prevent timeout errors
 
-    def __init__(self, bus: event_bus.EventBus, config: dict):
+    def __init__(self, bus: event_bus.EventBus, config: Dict[str, Any]):
         """Initializes component
 
         :param bus: event bus
@@ -93,7 +94,7 @@ class Database(component.Component):
     def string_agg_func(self):
         if isinstance(self.db, peewee.SqliteDatabase):
             return getattr(peewee.fn, 'group_concat')
-        elif isinstance(self.db, peewee.PostgresqlDatabase):
+        if isinstance(self.db, peewee.PostgresqlDatabase):
             return getattr(peewee.fn, 'string_agg')
         raise ValueError(f'Unexpected DB object {self.db}')
 
@@ -102,10 +103,11 @@ class Database(component.Component):
         db_name = self.config.get('db_name', 'pacs.db')
         uri = self.config.get('uri', True)
         mode = self.config.get('mode', 'memory')
+        max_conn = self.config.get('max_conn', 20)
         if uri:
             db_name = f'file:{db_name}?mode={mode}&cache=shared'
         self.log_info('Initialized SQLite database %s', db_name)
-        return peewee.SqliteDatabase(db_name, uri=uri)
+        return pool.PooledSqliteDatabase(db_name, uri=uri, max_connections=max_conn)
 
     def _init_postgres(self):
         """Initializes PostgreSQL database."""
@@ -114,12 +116,14 @@ class Database(component.Component):
         port = self.config.get('port', 5432)
         user = self.config.get('user', 'postgres')
         password = self.config.get('password', 'postgres')
+        max_conn = self.config.get('max_conn', 20)
         self.log_info(
             'Initializing PostgreSQL database with parameters: %s, %d %s',
             host, port, user
         )
-        return peewee.PostgresqlDatabase(
-            db_name, host=host, port=port, user=user, password=password
+        return pool.PooledPostgresqlDatabase(
+            db_name, host=host, port=port, user=user, password=password,
+            max_connections=max_conn
         )
 
     def _create_tables(self, tables: list):

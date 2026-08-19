@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import enum
 from itertools import chain
-from typing import Generator
+from typing import Iterator
 
 import pydicom
 from pynetdicom2 import statuses
@@ -203,7 +203,7 @@ class PACS(component.Component):
         failure = chain.from_iterable(f for _, f in results)
         return list(success), list(failure)
 
-    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
+    def c_find(self, ds: pydicom.Dataset) -> Iterator[pydicom.Dataset]:
         """C-FIND implementation
 
         Translate incoming dataset to database query

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from typing import Generator
+from typing import Iterator
 
 import peewee
 import pydicom
@@ -35,7 +35,7 @@ class SeriesAPI(base_api.BaseAPI):
             self.log.debug('Created new series, Series Instance UID: %s', series_instance_uid)
             return series
 
-    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
+    def c_find(self, ds: pydicom.Dataset) -> Iterator[pydicom.Dataset]:
         """C-FIND handler
 
         :param ds: C-FIND request

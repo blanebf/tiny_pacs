@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from typing import Generator
+from typing import Iterator
 
 import peewee
 import pydicom
@@ -64,7 +64,7 @@ class StudyAPI(base_api.BaseAPI):
             self.log.debug('Create new study, Study Instance UID: %s', study_instance_uid)
             return study
 
-    def c_find(self, ds: pydicom.Dataset) -> Generator[pydicom.Dataset]:
+    def c_find(self, ds: pydicom.Dataset) -> Iterator[pydicom.Dataset]:
         """C-FIND request handler for Study level
 
         :param ds: C-FIND request

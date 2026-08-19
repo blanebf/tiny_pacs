@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Base component implementation"""
 import logging
-from typing import Any, Hashable, List, Tuple
+from typing import Any, Dict, Hashable, List, Tuple
 
 from . import event_bus
 from . import questions
@@ -31,7 +31,7 @@ class Component:
         """
         return cls.__name__
 
-    def __init__(self, bus: event_bus.EventBus, config: dict):
+    def __init__(self, bus: event_bus.EventBus, config: Dict[str, Any]):
         self.bus = bus
         self.config = config
         self._logger = logging.getLogger(self.name())
