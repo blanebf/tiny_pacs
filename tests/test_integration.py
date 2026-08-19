@@ -11,9 +11,10 @@ from tiny_pacs import client, config, devices, events, server
 
 @pytest.fixture
 def pacs():
+    # Port 0 lets the OS pick a free port, so no fixed TCP ports are needed
     conf = config.Config()
     conf.update_config({
-        'ae': {'port': 11113},
+        'ae': {'port': 0},
         'components': {
             'Database': {'on': True, 'db_name': str(uuid.uuid4())}
         }
@@ -24,15 +25,24 @@ def pacs():
     _pacs.exit()
 
 
+def pacs_port(_pacs: server.Server) -> int:
+    """Actual port the server AE has bound (port 0 = OS-assigned)."""
+    return _pacs.ae.server.server_address[1]
+
+
 @pytest.fixture
-def pacs_client():
+def pacs_client(pacs: server.Server):
     def main_aet(_):
         return 'TEST_CLIENT'
     bus = trolleybus.EventBus()
     bus.subscribe(events.MainAET, main_aet)
     _devices = devices.Devices(bus, {
         'devices': {
-            'TINY_PACS': {'aet': 'TINY_PACS', 'address': '127.0.0.1', 'port': 11113}
+            'TINY_PACS': {
+                'aet': 'TINY_PACS',
+                'address': '127.0.0.1',
+                'port': pacs_port(pacs)
+            }
         }
     })
     _client = client.Client(bus, {})
@@ -97,17 +107,23 @@ class CStoreAE(applicationentity.AE):
 
 
 def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):
-    test_storage(pacs, pacs_client, test_ds)
-    find_request = pydicom.Dataset()
-    find_request.QueryRetrieveLevel = 'IMAGE'
-    find_request.StudyInstanceUID = None
-    find_request.SeriesInstanceUID = None
-    find_request.SOPInstanceUID = None
-    results = list(pacs_client.find(find_request))
-    assert len(results) == 1
-    ae = CStoreAE(test_ds, 'TEST_CLIENT', 11112)
+    # The storage AE binds an OS-assigned port up front; the server
+    # auto-adds the TEST_CLIENT device on the first association and uses
+    # its ``default_port`` for C-MOVE sub-operations, so point it at the
+    # actual bound port before any association is made.
+    ae = CStoreAE(test_ds, 'TEST_CLIENT', 0)
     ae.add_scp(sopclass.storage_scp)
+    _devices = next(c for c in pacs.components if isinstance(c, devices.Devices))
+    _devices.default_port = ae.server.server_address[1]
     with ae:
+        test_storage(pacs, pacs_client, test_ds)
+        find_request = pydicom.Dataset()
+        find_request.QueryRetrieveLevel = 'IMAGE'
+        find_request.StudyInstanceUID = None
+        find_request.SeriesInstanceUID = None
+        find_request.SOPInstanceUID = None
+        results = list(pacs_client.find(find_request))
+        assert len(results) == 1
         move_request = pydicom.Dataset()
         move_request.QueryRetrieveLevel = 'IMAGE'
         move_request.StudyInstanceUID = test_ds.StudyInstanceUID
