@@ -1,9 +1,10 @@
 [tool.poetry]
 name = "tiny_pacs"
-version = "0.1.0"
+version = "0.2.0"
 description = ""
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
+readme = "README.rst"
 keywords = ["medical", "dicom", "network"]
 
 classifiers = [
@@ -14,21 +15,30 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Topic :: Software Development :: Libraries"
 ]
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = ">=3.10,<4.0"
 pydicom = "^2.0"
 pynetdicom2 = "^0.9.3"
 peewee = "^3.13"
 PyYAML = "^5.3"
 
-[tool.poetry.dev-dependencies]
-pytest = "^3.0"
-rope = "^0.18.0"
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0"
+ruff = "*"
+mypy = "^1.0"
+
+[tool.poetry.scripts]
+tiny-pacs = "tiny_pacs.__main__:main"
 
 [build-system]
-requires = ["poetry>=0.12"]
-build-backend = "poetry.masonry.api"
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
