@@ -1,7 +1,8 @@
-# -*- coding: utf-8 -*-
-from typing import Any, Dict, Iterator
-from .questions import Question, Questionnaire
+from collections.abc import Iterator
+from typing import Any
+
 from . import config
+from .questions import Question, Questionnaire
 
 
 class AEQuestionnaire(Questionnaire):
@@ -71,7 +72,7 @@ class LogginQuestionnaire:
             yield self.log_file
         yield self.logging_level
 
-    def value(self) -> Dict[str, Any]:
+    def value(self) -> dict[str, Any]:
         if self.logging_handler.value == self.stream_handler:
             return {
                 'handlers': {

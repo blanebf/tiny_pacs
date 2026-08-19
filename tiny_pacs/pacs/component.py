@@ -1,21 +1,13 @@
-# -*- coding: utf-8 -*-
 import enum
+from collections.abc import Iterator
 from itertools import chain
-from typing import Iterator
 
 import pydicom
 import trolleybus
 from pynetdicom2 import statuses
 
-from .. import component
-from .. import events
-
-from . import models
-from . import patient_api
-from . import study_api
-from . import series_api
-from . import instance_api
-
+from .. import component, events
+from . import instance_api, models, patient_api, series_api, study_api
 
 #: Set of tags excluded from generating queries based on C-FIND-RQ
 EXCLUDED_ATTRS = set([
@@ -127,7 +119,7 @@ class PACS(component.Component):
         try:
             ds = pydicom.dcmread(payload.ds, stop_before_pixels=True)
             self.c_store(ds)
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             self.log_exception(f'Failed to store dataset: {error}')
             self.broadcast(events.StoreFailure, ds)
             return statuses.C_STORE_CANNOT_UNDERSTAND

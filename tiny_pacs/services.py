@@ -6,18 +6,19 @@ this PACS implementation.
 import functools
 from collections.abc import Iterator
 from itertools import count
-from typing import TYPE_CHECKING, Union, cast
+from typing import TYPE_CHECKING, cast
 
 from pydicom import uid
-
-from pynetdicom2 import asceprovider
-from pynetdicom2 import applicationentity
-from pynetdicom2 import dimsemessages
-from pynetdicom2 import exceptions
-from pynetdicom2 import fsm
-from pynetdicom2 import sopclass
-from pynetdicom2 import statuses
-from pynetdicom2 import dsutils
+from pynetdicom2 import (
+    applicationentity,
+    asceprovider,
+    dimsemessages,
+    dsutils,
+    exceptions,
+    fsm,
+    sopclass,
+    statuses,
+)
 
 from . import events
 
@@ -27,8 +28,7 @@ if TYPE_CHECKING:
 
 def _send_ops_response(asce: asceprovider.AssociationAcceptor,
                        ctx: fsm.PContextDef,
-                       msg: Union[dimsemessages.CMoveRQMessage,
-                                  dimsemessages.CGetRQMessage],
+                       msg: dimsemessages.CMoveRQMessage | dimsemessages.CGetRQMessage,
                        _status: statuses.Status,
                        nop: int, failed: int, warning: int,
                        completed: int):
@@ -38,7 +38,7 @@ def _send_ops_response(asce: asceprovider.AssociationAcceptor,
     encoded lazily by the DUL provider thread, so reusing the same message
     object between sends would race with the encoding.
     """
-    rsp: Union[dimsemessages.CMoveRSPMessage, dimsemessages.CGetRSPMessage]
+    rsp: dimsemessages.CMoveRSPMessage | dimsemessages.CGetRSPMessage
     if isinstance(msg, dimsemessages.CMoveRQMessage):
         rsp = dimsemessages.CMoveRSPMessage()
     else:
@@ -176,9 +176,9 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
         )
         # PS3.7 9.1.1.1.3: message IDs must be non-zero
         status = service(data_set, completed + 1)
-        if status.is_failure:  # pylint: disable=no-member
+        if status.is_failure:
             failed += 1
-        elif status.is_warning:  # pylint: disable=no-member
+        elif status.is_warning:
             warning += 1
         else:
             success += 1

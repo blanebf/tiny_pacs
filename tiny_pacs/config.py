@@ -1,22 +1,15 @@
-# -*- coding: utf-8 -*-
 """Configuration system."""
 import json
 import os
+from typing import IO, Any, TypeAlias, cast
 
-from typing import Any, Dict, IO, List, Type, Union
-
+import yaml  # type: ignore[import-untyped]
 from pydicom import uid
 from pynetdicom2 import uids
-import yaml  # type: ignore[import-untyped]
 
-from . import component
-from . import db
-from . import devices
-from . import pacs
-from . import storage
+from . import component, db, devices, pacs, storage
 
-
-ConfigInput = Union[str, List[str], IO[bytes], dict]
+ConfigInput: TypeAlias = str | list[str] | IO[bytes] | dict[str, Any]
 
 
 class Config(dict):
@@ -48,7 +41,7 @@ class Config(dict):
         elif hasattr(_config, 'read'):
             try:
                 data = yaml.safe_load(_config)
-            except Exception:   # pylint: disable=broad-except
+            except Exception:
                 data = json.load(_config)
         elif isinstance(_config, dict):
             data = _config
@@ -67,7 +60,7 @@ class Config(dict):
 
         :rtype: dict
         """
-        return self['ae']
+        return cast(dict, self['ae'])
 
     @property
     def log(self) -> dict:
@@ -75,7 +68,7 @@ class Config(dict):
 
         :rtype: dict
         """
-        return self['log']
+        return cast(dict, self['log'])
 
     @property
     def components(self) -> dict:
@@ -86,7 +79,7 @@ class Config(dict):
         if not self['components']:
             return DEFAULT_COMPONENTS
 
-        return self['components']
+        return cast(dict, self['components'])
 
     @staticmethod
     def _read_yaml(file_name: str):
@@ -99,7 +92,7 @@ class Config(dict):
             return json.load(fp)
 
 
-COMPONENT_REGISTRY: Dict[str, Type[component.Component]] = {
+COMPONENT_REGISTRY: dict[str, type[component.Component]] = {
     'Database': db.Database,
     'Devices': devices.Devices,
     'PACS': pacs.PACS,
@@ -144,7 +137,7 @@ DEFAULT_AE_CONFIG = {
     ]
 }
 
-DEFAULT_COMPONENTS: Dict[str, Dict[str, Any]] = {
+DEFAULT_COMPONENTS: dict[str, dict[str, Any]] = {
     'Database': {'on': True},
     'Devices': {'on': True},
     'PACS': {'on': True},

@@ -5,13 +5,11 @@ Initializes all components and starts listening for incoming connections
 import logging
 import logging.config
 import time
-from typing import Iterator
+from collections.abc import Iterator
 
 import trolleybus
 
-from . import ae
-from . import component
-from . import config
+from . import ae, component, config
 
 
 class Server:

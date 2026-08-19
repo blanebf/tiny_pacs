@@ -1,10 +1,11 @@
-# -*- coding: utf-8 -*-
-from typing import Any, Dict, Iterator, List, Callable, Union
+from collections.abc import Callable, Iterator
+from typing import Any
+
 
 class Question:
     def __init__(self, key, prompt: str, handler: Callable[[Any], Any],
                  repeatable=False, default: Any = None,
-                 default_repr: Union[str, None] = None):
+                 default_repr: str | None = None):
         self.key = key
         self.prompt = prompt
         self.handler = handler
@@ -35,11 +36,11 @@ class Question:
 
 
 class Questionnaire:
-    def __init__(self, questions: List[Question]):
+    def __init__(self, questions: list[Question]):
         self.questions = questions
 
     def __iter__(self) -> Iterator[Question]:
         yield from self.questions
 
-    def value(self) -> Dict[str, Any]:
+    def value(self) -> dict[str, Any]:
         return {q.key: q.value for q in self.questions}

@@ -1,14 +1,17 @@
-# -*- coding: utf-8 -*-
-from typing import Iterator
+from collections.abc import Iterator
 
 import peewee
 import pydicom
 from pydicom.tag import Tag
 
 from .. import events
+from . import base_api, models
 
-from . import models
-from . import base_api
+
+def _dedup_multivalue(value):
+    if not value:
+        return value
+    return '\\'.join(set(value.split('\\')))
 
 class StudyAPI(base_api.BaseAPI):
     def c_store(self, patient: peewee.Model, ds: pydicom.Dataset) -> peewee.Model:
@@ -24,7 +27,7 @@ class StudyAPI(base_api.BaseAPI):
         study_instance_uid = ds.StudyInstanceUID
         try:
             return models.Study.get(models.Study.study_instance_uid == study_instance_uid)
-        except models.Study.DoesNotExist:  # pylint: disable=no-member
+        except peewee.DoesNotExist:
             study_date = getattr(ds, 'StudyDate', None)
             study_time = getattr(ds, 'StudyTime', None)
             accession_number = getattr(ds, 'AccessionNumber', None)
@@ -72,14 +75,14 @@ class StudyAPI(base_api.BaseAPI):
         :yield: C-FIND result
         :rtype: pydicom.Dataset
         """
-        joins = set()
+        joins: base_api.JoinsSet = set()
 
-        response_attrs = []
-        select = [models.Study]
-        upper_level_filters = []
+        response_attrs: base_api.ResponseAttrs = []
+        select: base_api.SelectColumns = [models.Study]
+        upper_level_filters: base_api.UpperLevelFilters = []
 
         patient_attrs = [e for e in ds if e.tag in models.Patient.mapping]
-        skipped = set(e.tag for e in patient_attrs)
+        skipped: base_api.SkippedTags = set(e.tag for e in patient_attrs)
         if patient_attrs:
             upper_level_filters.extend(self.filter_upper_level(models.Patient, patient_attrs))
             for tag, attr, vr, _, attr_name in upper_level_filters:
@@ -95,8 +98,7 @@ class StudyAPI(base_api.BaseAPI):
             select.append(
                 agg_fun(models.Series.modality, '\\').alias('modalities_in_study')
             )
-            func = lambda v: '\\'.join(set(v.split('\\'))) if v else v
-            response_attrs.append((_tag, 'modalities_in_study', 'CS', func))
+            response_attrs.append((_tag, 'modalities_in_study', 'CS', _dedup_multivalue))
             joins.add((models.Study, models.Series))
         if 'SOPClassesInStudy' in ds:
             _tag = Tag(0x0008, 0x0062)
@@ -105,15 +107,14 @@ class StudyAPI(base_api.BaseAPI):
             select.append(
                 agg_fun(models.Instance.sop_class_uid, '\\').alias('sop_classes_in_study')
             )
-            func = lambda v: '\\'.join(set(v.split('\\'))) if v else v
-            response_attrs.append((_tag, 'sop_classes_in_study', 'UI', func))
+            response_attrs.append((_tag, 'sop_classes_in_study', 'UI', _dedup_multivalue))
             joins.update([(models.Study, models.Series), (models.Series, models.Instance)])
         if 'NumberOfStudyRelatedSeries' in ds:
             _tag = Tag(0x0020, 0x1206)
             skipped.add(_tag)
             select.append(
                 peewee.fn.Count(models.Series.id)\
-                    .alias('number_of_study_related_series')  # pylint: disable=no-member
+                    .alias('number_of_study_related_series')
             )
             response_attrs.append(
                 (_tag, 'number_of_study_related_series', 'IS', None)
@@ -124,7 +125,7 @@ class StudyAPI(base_api.BaseAPI):
             skipped.add(_tag)
             select.append(
                 peewee.fn.Count(models.Instance.id)\
-                    .alias('number_of_study_related_instances')  # pylint: disable=no-member
+                    .alias('number_of_study_related_instances')
             )
             response_attrs.append(
                 (_tag, 'number_of_study_related_instances', 'IS', None)
@@ -145,5 +146,5 @@ class StudyAPI(base_api.BaseAPI):
 
         encoding = getattr(ds, 'SpecificCharacterSet', 'ISO-IR 6')
         if not query.count():
-            return []
+            return
         yield from (self.encode_response(s, response_attrs, encoding) for s in query)

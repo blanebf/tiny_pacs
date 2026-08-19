@@ -131,7 +131,7 @@ def test_broadcast_exception(bus: trolleybus.EventBus):
 
     def callback2(_):
         # Shouldn't be called
-        assert False
+        raise AssertionError('callback2 must not be called')
 
     bus.subscribe(SimpleEvent, callback1, 60)
     bus.subscribe(SimpleEvent, callback2, 40)

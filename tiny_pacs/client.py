@@ -1,20 +1,14 @@
-# -*- coding: utf-8 -*-
 """DICOM Client component implementation."""
 import enum
 import logging
-from typing import Iterator, Union
+from collections.abc import Iterator
 
 import pydicom
 import trolleybus
+from pydicom import filereader, uid
+from pynetdicom2 import applicationentity, asceprovider, sopclass, uids
 
-from pydicom import filereader
-from pydicom import uid
-from pynetdicom2 import applicationentity, asceprovider
-from pynetdicom2 import sopclass
-from pynetdicom2 import uids
-
-from . import component
-from . import events
+from . import component, events
 
 
 class FindRoot(enum.Enum):
@@ -155,13 +149,13 @@ class DICOMClient:
 
                 yield result
 
-    def store(self, ds: Union[pydicom.Dataset, str],
-              sop_class_uid: Union[uid.UID, None] = None,
-              transfer_syntax: Union[uid.UID, None] = None):
+    def store(self, ds: pydicom.Dataset | str,
+              sop_class_uid: uid.UID | None = None,
+              transfer_syntax: uid.UID | None = None):
         """Send a C-STORE request with provided dataset
 
         :param ds: dataset to store (filename or dataset itself)
-        :type ds: Union[pydicom.Dataset, str]
+        :type ds: pydicom.Dataset | str
         :param sop_class_uid: dataset SOP Class UID, defaults to None
         :type sop_class_uid: uid.UID, optional
         :param transfer_syntax: dataset Transfer Syntax UID, defaults to None
@@ -180,13 +174,13 @@ class DICOMClient:
             self.store_with_asce(asce, ds, sop_class_uid)
 
     def store_with_asce(self, asce: asceprovider.AssociationRequester,
-                        ds: Union[pydicom.Dataset, str], sop_class_uid: uid.UID):
+                        ds: pydicom.Dataset | str, sop_class_uid: uid.UID):
         """Make a C-STORE request with existing association
 
         :param asce: Existing assocation
         :type asce: asceprovider.AssociationRequester
         :param ds: dataset to store (filename or dataset itself)
-        :type ds: Union[pydicom.Dataset, str]
+        :type ds: pydicom.Dataset | str
         :param sop_class_uid: dataet SOP Class UID
         :type sop_class_uid: uid.UID
         :raises CStoreError: raised if C-STORE failed
@@ -199,7 +193,7 @@ class DICOMClient:
             raise CStoreError(status)
 
     def move(self, ds: pydicom.Dataset, root=MoveRoot.STUDY,
-             dest_ae: Union[str, None] = None):
+             dest_ae: str | None = None):
         """Makes a C-MOVE request to destination AE Title (or self, if not specified)
 
         :param ds: C-MOVE request dataset
@@ -219,8 +213,8 @@ class DICOMClient:
             self._move(asce, ds, dest_ae, root)
 
     def move_instance(self, study_uid: uid.UID, series_uid: uid.UID,
-                      instance_uid: uid.UID, dest_ae: Union[str, None] = None,
-                      asce: Union[asceprovider.AssociationRequester, None] = None):
+                      instance_uid: uid.UID, dest_ae: str | None = None,
+                      asce: asceprovider.AssociationRequester | None = None):
         """Makes a C-MOVE request for a single instance to destination AE Title (or self, if not
         specified)
 

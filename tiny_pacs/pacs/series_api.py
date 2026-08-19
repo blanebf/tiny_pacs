@@ -1,12 +1,10 @@
-# -*- coding: utf-8 -*-
-from typing import Iterator
+from collections.abc import Iterator
 
 import peewee
 import pydicom
 from pydicom.tag import Tag
 
-from . import models
-from . import base_api
+from . import base_api, models
 
 
 class SeriesAPI(base_api.BaseAPI):
@@ -23,7 +21,7 @@ class SeriesAPI(base_api.BaseAPI):
         series_instance_uid = ds.SeriesInstanceUID
         try:
             return models.Series.get(models.Series.series_instance_uid == series_instance_uid)
-        except models.Series.DoesNotExist:  # pylint: disable=no-member
+        except peewee.DoesNotExist:
             modality = getattr(ds, 'Modality', None)
             series_number = getattr(ds, 'SeriesNumber', None)
             series = models.Series.create(
@@ -43,13 +41,13 @@ class SeriesAPI(base_api.BaseAPI):
         :yield: C-FIND results
         :rtype: pydicom.Dataset
         """
-        joins = set()
+        joins: base_api.JoinsSet = set()
 
-        response_attrs = []
-        select = [models.Series]
-        upper_level_filters = []
+        response_attrs: base_api.ResponseAttrs = []
+        select: base_api.SelectColumns = [models.Series]
+        upper_level_filters: base_api.UpperLevelFilters = []
 
-        skipped = set()
+        skipped: base_api.SkippedTags = set()
 
         patient_attrs = [e for e in ds if e.tag in models.Patient.mapping]
         skipped.update(e.tag for e in patient_attrs)
@@ -78,7 +76,7 @@ class SeriesAPI(base_api.BaseAPI):
             skipped.add(_tag)
             select.append(
                 peewee.fn.Count(models.Instance.id)\
-                    .alias('number_of_series_related_instances')  # pylint: disable=no-member
+                    .alias('number_of_series_related_instances')
             )
             response_attrs.append(
                 (_tag, 'number_of_series_related_instances', 'IS', None)
@@ -99,6 +97,6 @@ class SeriesAPI(base_api.BaseAPI):
 
         encoding = getattr(ds, 'SpecificCharacterSet', 'ISO-IR 6')
         if not query.count():
-            return []
+            return
 
         yield from (self.encode_response(s, response_attrs, encoding) for s in query)

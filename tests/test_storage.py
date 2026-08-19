@@ -1,15 +1,12 @@
 import uuid
+
 import pydicom
 import pytest
-
 import trolleybus
 from pydicom import uid
-from pynetdicom2 import fsm
-from pynetdicom2 import dsutils
+from pynetdicom2 import dsutils, fsm
 
-from tiny_pacs import db
-from tiny_pacs import events
-from tiny_pacs import storage
+from tiny_pacs import db, events, storage
 
 
 @pytest.fixture
@@ -33,7 +30,7 @@ def test_new_file(memory_storage: storage.InMemoryStorage):
     assert _file.sop_class_uid == '1.2.3'
     assert _file.transfer_syntax == '1.2.3.5'
     assert _file.file_name == 'test'
-    assert _file.is_stored == False
+    assert not _file.is_stored
 
 
 def test_in_progress_storage(memory_storage: storage.InMemoryStorage):
@@ -46,7 +43,7 @@ def test_in_progress_storage(memory_storage: storage.InMemoryStorage):
     ds = pydicom.Dataset()
     ds.SOPInstanceUID = '1.2.3.4'
     _file = storage.StorageFiles.get(storage.StorageFiles.sop_instance_uid == '1.2.3.4')
-    assert _file.is_stored == False
+    assert not _file.is_stored
 
 
 def test_failure_storage(memory_storage: storage.InMemoryStorage):
@@ -59,7 +56,7 @@ def test_failure_storage(memory_storage: storage.InMemoryStorage):
     ds = pydicom.Dataset()
     ds.SOPInstanceUID = '1.2.3.4'
     memory_storage.bus.broadcast(events.StoreFailure, ds)
-    with pytest.raises(storage.StorageFiles.DoesNotExist):  # pylint: disable=no-member
+    with pytest.raises(storage.StorageFiles.DoesNotExist):
         storage.StorageFiles.get(storage.StorageFiles.sop_instance_uid == '1.2.3.4')
 
 

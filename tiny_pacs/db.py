@@ -1,15 +1,13 @@
 import enum
+from collections.abc import Callable
 from itertools import chain
-from typing import Any, Dict
+from typing import Any
 
 import peewee
 import trolleybus
-
 from playhouse import pool  # type: ignore[import-untyped]
 
-from . import component
-from . import events
-from . import questions
+from . import component, events, questions
 
 
 class DBDrivers(enum.Enum):
@@ -29,7 +27,7 @@ class Database(component.Component):
     """
     # TODO: Add thread locking for SQLite, to prevent timeout errors
 
-    def __init__(self, bus: trolleybus.EventBus, config: Dict[str, Any]):
+    def __init__(self, bus: trolleybus.EventBus, config: dict[str, Any]):
         """Initializes component
 
         :param bus: event bus
@@ -80,11 +78,11 @@ class Database(component.Component):
             raise RuntimeError('Database is not initialized')
         return self.db.atomic()
 
-    def string_agg_func(self, _: None = None):
+    def string_agg_func(self, _: None = None) -> Callable[..., peewee.Function]:
         if isinstance(self.db, peewee.SqliteDatabase):
-            return getattr(peewee.fn, 'group_concat')
+            return peewee.fn.group_concat
         if isinstance(self.db, peewee.PostgresqlDatabase):
-            return getattr(peewee.fn, 'string_agg')
+            return peewee.fn.string_agg
         raise ValueError(f'Unexpected DB object {self.db}')
 
     def _init_sqlite(self):

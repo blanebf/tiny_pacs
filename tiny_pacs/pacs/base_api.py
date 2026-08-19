@@ -1,8 +1,28 @@
-# -*- coding: utf-8 -*-
 import logging
+from typing import Any, TypeAlias
+
 import peewee
 import pydicom
 import trolleybus
+from pydicom.tag import BaseTag
+
+#: Set of joins between models for a C-FIND query
+JoinsSet: TypeAlias = set[tuple[type[peewee.Model], type[peewee.Model]]]
+
+#: C-FIND select columns: model classes and column expressions
+SelectColumns: TypeAlias = list[Any]
+
+#: C-FIND response attributes: ``(tag, attribute name or attribute path, VR,
+#: encoding function)`` tuples, unpacked positionally by
+#: :meth:`BaseAPI.encode_response`
+ResponseAttrs: TypeAlias = list[tuple[Any, ...]]
+
+#: Upper C-FIND level filters: ``(tag, attribute, VR, element, attribute
+#: name)`` tuples, as yielded by :meth:`BaseAPI.filter_upper_level`
+UpperLevelFilters: TypeAlias = list[tuple[Any, ...]]
+
+#: C-FIND request tags skipped by query building
+SkippedTags: TypeAlias = set[BaseTag]
 
 
 #: Set of tags excluded from generating queries based on C-FIND-RQ

@@ -1,21 +1,13 @@
-# -*- coding: utf-8 -*-
 import uuid
+
 import pydicom
 import pytest
-
 import trolleybus
-
 from pydicom import uid
-from pynetdicom2 import applicationentity
-from pynetdicom2 import sopclass
-from pynetdicom2 import statuses
-from pynetdicom2 import uids
+from pynetdicom2 import applicationentity, sopclass, statuses, uids
 
-from tiny_pacs import client
-from tiny_pacs import config
-from tiny_pacs import devices
-from tiny_pacs import events
-from tiny_pacs import server
+from tiny_pacs import client, config, devices, events, server
+
 
 @pytest.fixture
 def pacs():
@@ -61,11 +53,11 @@ def test_ds():
     return ds
 
 
-def test_startup(pacs: server.Server, pacs_client: client.DICOMClient):  # pylint: disable=redefined-outer-name
+def test_startup(pacs: server.Server, pacs_client: client.DICOMClient):
     pacs_client.echo()
 
 
-def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):  # pylint: disable=redefined-outer-name
+def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):
     request = pydicom.Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -76,7 +68,7 @@ def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):  # py
     assert not list(results)
 
 
-def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):  # pylint: disable=redefined-outer-name
+def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):
     request = pydicom.Dataset()
     request.StudyInstanceUID = '1.2.3'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -84,7 +76,7 @@ def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):  # py
     pacs_client.move(request)
 
 
-def test_storage(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):  # pylint: disable=redefined-outer-name
+def test_storage(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):
     pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE, uid.ImplicitVRLittleEndian)
 
 
@@ -104,7 +96,7 @@ class CStoreAE(applicationentity.AE):
         return statuses.SUCCESS
 
 
-def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):  # pylint: disable=redefined-outer-name
+def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):
     test_storage(pacs, pacs_client, test_ds)
     find_request = pydicom.Dataset()
     find_request.QueryRetrieveLevel = 'IMAGE'

@@ -1,8 +1,6 @@
 import trolleybus
 
-from . import component
-from . import events
-from . import questions
+from . import component, events, questions
 
 
 class Devices(component.Component):
@@ -72,4 +70,4 @@ class DeviceQuestion(questions.Question):
 
     @value.setter
     def value(self, _value):
-        questions.Question.value.fset(self, _value)  # type: ignore[attr-defined]
+        questions.Question.value.fset(self, _value)

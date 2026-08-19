@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """PACS Component database tables.
 
 
@@ -22,6 +21,9 @@ class Patient(peewee.Model):
         0x00102160: ('ethnic_group', 'SH'),
         0x00104000: ('patient_comments', 'LT')
     }
+
+    #: Primary key
+    id = peewee.AutoField(primary_key=True)
 
     #: Patinet's Name (0010, 0010) PN
     patient_name = peewee.CharField(max_length=64*5+4, index=True, null=True)
@@ -77,6 +79,9 @@ class Study(peewee.Model):
         0x00102180: ('occupation', 'SH'),
         0x001021B0: ('additional_patient_history', 'LT')
     }
+
+    #: Primary key
+    id = peewee.AutoField(primary_key=True)
 
     #: Reference to Patient
     patient = peewee.ForeignKeyField(Patient)
@@ -144,6 +149,9 @@ class Series(peewee.Model):
         0x0020000E: ('series_instance_uid', 'UI')
     }
 
+    #: Primary key
+    id = peewee.AutoField(primary_key=True)
+
     #: Reference to Study
     study = peewee.ForeignKeyField(Study)
 
@@ -171,6 +179,9 @@ class Instance(peewee.Model):
         0x00080016: ('sop_class_uid', 'UI'),
         0x00400512: ('container_identifier', 'LO')
     }
+
+    #: Primary key
+    id = peewee.AutoField(primary_key=True)
 
     #: Series reference
     series = peewee.ForeignKeyField(Series)

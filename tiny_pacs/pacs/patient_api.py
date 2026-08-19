@@ -1,12 +1,11 @@
-# -*- coding: utf-8 -*-
-from typing import Iterator
+from collections.abc import Iterator
 
 import peewee
 import pydicom
 from pydicom.tag import Tag
 
-from .models import Patient, Study, Series, Instance
 from . import base_api
+from .models import Instance, Patient, Series, Study
 
 
 class PatientAPI(base_api.BaseAPI):
@@ -34,7 +33,7 @@ class PatientAPI(base_api.BaseAPI):
             query = query.where(Patient.patient_birth_date == patient_birth_date)
         try:
             patient = query.get()
-        except Patient.DoesNotExist:  # pylint: disable=no-member
+        except peewee.DoesNotExist:
             issuer_of_patient_id = getattr(ds, 'IssuerOfPatientID', None)
             patient_birth_time = getattr(ds, 'PatientBirthTime', None)
             other_patient_names = getattr(ds, 'OtherPatientNames', '')
@@ -64,18 +63,18 @@ class PatientAPI(base_api.BaseAPI):
         :yield: C-FIND result
         :rtype: pydicom.Dataset
         """
-        joins = set()
+        joins: base_api.JoinsSet = set()
 
-        response_attrs = []
+        response_attrs: base_api.ResponseAttrs = []
 
-        select = [Patient]
-        skipped = set()
+        select: base_api.SelectColumns = [Patient]
+        skipped: base_api.SkippedTags = set()
         if 'NumberOfPatientRelatedStudies' in ds:
             _tag = Tag(0x0020, 0x1200)
             skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Study.id)\
-                    .alias('number_of_patient_related_studies')  # pylint: disable=no-member
+                    .alias('number_of_patient_related_studies')
                 )
             response_attrs.append(
                 (_tag, 'number_of_patient_related_studies', 'IS', None)
@@ -86,7 +85,7 @@ class PatientAPI(base_api.BaseAPI):
             skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Series.id)\
-                    .alias('number_of_patient_related_series')  # pylint: disable=no-member
+                    .alias('number_of_patient_related_series')
             )
             response_attrs.append(
                 (_tag, 'number_of_patient_related_series', 'IS', None)
@@ -97,7 +96,7 @@ class PatientAPI(base_api.BaseAPI):
             skipped.add(_tag)
             select.append(
                 peewee.fn.Count(Instance.id)\
-                    .alias('number_of_patient_related_instances')  # pylint: disable=no-member
+                    .alias('number_of_patient_related_instances')
             )
             response_attrs.append(
                 (_tag, 'number_of_patient_related_instances', 'IS', None)

@@ -7,19 +7,16 @@ import io
 import os
 import shutil
 import tempfile
-from typing import BinaryIO, Iterable, Union, cast
+from collections.abc import Iterable
+from typing import BinaryIO, cast
 
 import peewee
-
 import pydicom
 import trolleybus
-
-from pynetdicom2 import applicationentity
 from pydicom import uid
+from pynetdicom2 import applicationentity
 
-from . import component
-from . import events
-from . import questions
+from . import component, events, questions
 
 
 def _utcnow() -> datetime.datetime:
@@ -117,7 +114,7 @@ class StorageBase(component.Component):
         raise NotImplementedError()
 
     def new_file(self, sop_instance_uid: str, sop_class_uid: str,
-                 transfer_syntax: Union[str, uid.UID], file_name: str) -> StorageFiles:
+                 transfer_syntax: str | uid.UID, file_name: str) -> StorageFiles:
         """Adds new file record to the database
 
         :param sop_instance_uid: file SOP Instance UID
@@ -145,12 +142,12 @@ class StorageBase(component.Component):
             }
         )
         with self.atomic():
-            return cast(StorageFiles, StorageFiles.create(
+            return StorageFiles.create(
                 sop_instance_uid=sop_instance_uid,
                 sop_class_uid=sop_class_uid,
                 transfer_syntax=transfer_syntax,
                 file_name=file_name
-            ))
+            )
 
     def file_stored(self, sop_instance_uid: str):
         """Set file with specific SOP Instance UID as successfully stored
@@ -206,10 +203,12 @@ class StorageBase(component.Component):
         :return: query to iterate over
         :rtype: peewee.ModelSelect
         """
+        # ``== True`` on a peewee field builds a SQL expression, it is not a
+        # Python singleton comparison; peewee 4 has no ``.is_()`` alternative.
         query = StorageFiles.select()\
             .where(
                 (StorageFiles.sop_instance_uid << sop_instance_uids) &
-                (StorageFiles.is_stored == True)  # pylint: disable=singleton-comparison
+                (StorageFiles.is_stored == True)  # noqa: E712
             )
         return query
 
@@ -221,7 +220,7 @@ class StorageBase(component.Component):
         """
         try:
             os.remove(file_name)
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             self.log_exception(f'Failed to remove file {file_name}: {error}')
 
 
@@ -320,7 +319,7 @@ class FileStorage(StorageBase):
         """
         try:
             shutil.rmtree(self.storage_dir)
-        except Exception as error:  # pylint: disable=broad-except
+        except Exception as error:
             self.log_exception(
                 f'Failed to cleanup storage directory {self.storage_dir}: {error}'
             )

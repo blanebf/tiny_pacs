@@ -1,17 +1,10 @@
 import pytest
-
 import trolleybus
-
-from pydicom.uid import ImplicitVRLittleEndian
 from pydicom import dataset
-from pynetdicom2 import fsm
-from pynetdicom2 import uids
-from pynetdicom2 import statuses
-from pynetdicom2 import pdu
+from pydicom.uid import ImplicitVRLittleEndian
+from pynetdicom2 import fsm, pdu, statuses, uids
 
-from tiny_pacs import ae
-from tiny_pacs import devices
-from tiny_pacs import events
+from tiny_pacs import ae, devices, events
 
 
 @pytest.fixture

@@ -12,13 +12,12 @@ Lifecycle events are provided by :mod:`trolleybus` itself
 """
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, BinaryIO, Union
+from typing import TYPE_CHECKING, Any, BinaryIO, TypeAlias
 
 import peewee
 import pydicom
 import trolleybus
 from pydicom import uid
-
 from pynetdicom2 import asceprovider, fsm, pdu, statuses
 
 if TYPE_CHECKING:
@@ -28,10 +27,10 @@ if TYPE_CHECKING:
 #: Single stored file: SOP Class UID, Transfer Syntax UID and either a file
 #: name, a dataset or a file object. UID values can come either as
 #: ``pydicom.uid.UID`` objects or as plain strings (e.g. from the database).
-StoredFile = tuple[
-    Union[str, uid.UID],
-    Union[str, uid.UID],
-    Union[str, pydicom.Dataset, BinaryIO]
+StoredFile: TypeAlias = tuple[
+    str | uid.UID,
+    str | uid.UID,
+    str | pydicom.Dataset | BinaryIO
 ]
 
 
@@ -63,7 +62,7 @@ class StorePayload:
 
     #: Incoming dataset: file object (when SOP Class is stored in file) or
     #: raw encoded bytes
-    ds: Union[BinaryIO, bytes]
+    ds: BinaryIO | bytes
 
 
 class Store(trolleybus.Event[StorePayload, statuses.Status]):
@@ -192,7 +191,7 @@ class Tables(trolleybus.Event[None, list[type[peewee.Model]]]):
     """Request a list of database tables from components."""
 
 
-class StringAgg(trolleybus.Event[None, Callable[..., peewee.Node]]):
+class StringAgg(trolleybus.Event[None, Callable[..., peewee.Function]]):
     """Request the string aggregate SQL function for the current DB driver."""
 
 
@@ -200,7 +199,7 @@ class StringAgg(trolleybus.Event[None, Callable[..., peewee.Node]]):
 # Device events
 # ---------------------------------------------------------------------------
 
-class DeviceByAE(trolleybus.Event[str, Union[dict[str, Any], None]]):
+class DeviceByAE(trolleybus.Event[str, dict[str, Any] | None]):
     """Request device settings by AE Title."""
 
 

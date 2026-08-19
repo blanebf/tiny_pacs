@@ -6,21 +6,14 @@ import io
 import logging
 from collections.abc import Iterable, Iterator
 from itertools import chain
-from typing import BinaryIO, Union
+from typing import BinaryIO
 
 import pydicom
 import trolleybus
-
-from pynetdicom2 import applicationentity
-from pynetdicom2 import asceprovider
-from pynetdicom2 import exceptions
-from pynetdicom2 import fsm
-from pynetdicom2 import sopclass
-from pynetdicom2 import statuses
 from pydicom import uid
+from pynetdicom2 import applicationentity, asceprovider, exceptions, fsm, sopclass, statuses
 
-from . import events
-from . import services
+from . import events, services
 
 
 class AE(applicationentity.AE):
@@ -40,6 +33,7 @@ class AE(applicationentity.AE):
 
         self.dump_ds = config.get('dump_ds', False)
 
+        self.valid_aet: list[str]
         if isinstance(ae_title, list):
             main_aet = ae_title[0]
             self.valid_aet = ae_title
@@ -88,7 +82,7 @@ class AE(applicationentity.AE):
         self.bus.broadcast(events.Assoc, events.AssocPayload(asce, assoc))
 
     def on_receive_store(self, context: fsm.PContextDef,
-                         ds: Union[BinaryIO, bytes]) -> statuses.Status:
+                         ds: BinaryIO | bytes) -> statuses.Status:
         self.log.info('Received C-STORE %r', context)
         if isinstance(ds, bytes):
             # Dataset arrives as raw bytes when its SOP Class UID is not in
@@ -114,7 +108,7 @@ class AE(applicationentity.AE):
         except Exception as error:
             msg = f'C-STORE handling failed: {error}'
             self.log.exception(msg)
-            raise exceptions.EventHandlingError(msg)
+            raise exceptions.EventHandlingError(msg) from error
 
         for status in results:
             if not status.is_success:
@@ -135,7 +129,7 @@ class AE(applicationentity.AE):
         except Exception as error:
             msg = f'C-FIND handling failed {error}'
             self.log.exception(msg)
-            raise exceptions.EventHandlingError(msg)
+            raise exceptions.EventHandlingError(msg) from error
 
         yield from chain.from_iterable(results)
 
@@ -161,7 +155,7 @@ class AE(applicationentity.AE):
         except Exception as error:
             msg = f'C-MOVE handling failed {error}'
             self.log.exception(msg)
-            raise exceptions.EventHandlingError(msg)
+            raise exceptions.EventHandlingError(msg) from error
 
         datasets = list(chain.from_iterable(results))
         return asceprovider.RemoteAEConfig(**remote_ae), len(datasets), iter(datasets)
@@ -191,7 +185,7 @@ class AE(applicationentity.AE):
         except Exception as error:
             msg = f'C-GET handling failed {error}'
             self.log.exception(msg)
-            raise exceptions.EventHandlingError(msg)
+            raise exceptions.EventHandlingError(msg) from error
         yield from chain.from_iterable(results)
 
     def on_commitment_request(
@@ -213,7 +207,7 @@ class AE(applicationentity.AE):
         except Exception as error:
             msg = f'Storage Commitment handling failed: {error}'
             self.log.exception(msg)
-            raise exceptions.EventHandlingError(msg)
+            raise exceptions.EventHandlingError(msg) from error
 
         success = list(chain.from_iterable(s for s, _ in results))
         failure = [

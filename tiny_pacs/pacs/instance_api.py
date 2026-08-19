@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
-from typing import Iterator
+from collections.abc import Iterator
 
 import peewee
 import pydicom
-from . import models
-from . import base_api
+
+from . import base_api, models
+
 
 class InstanceAPI(base_api.BaseAPI):
     def c_store(self, series: peewee.Model, ds: pydicom.Dataset) -> peewee.Model:
@@ -20,13 +20,13 @@ class InstanceAPI(base_api.BaseAPI):
         sop_instance_uid = ds.SOPInstanceUID
         try:
             return models.Instance.get(models.Instance.sop_instance_uid == sop_instance_uid)
-        except models.Instance.DoesNotExist:  # pylint: disable=no-member
+        except peewee.DoesNotExist:
             instance_number = getattr(ds, 'InstanceNumber', None)
             sop_class_uid = getattr(ds, 'SOPClassUID', None)
             container_identifier = getattr(ds, 'ContainerIdentifier', None)
             meta = getattr(ds, 'file_meta', None)
             if meta:
-                transfer_syntax_uid = getattr(meta, 'TransferSyntaxUID')
+                transfer_syntax_uid = meta.TransferSyntaxUID
             else:
                 transfer_syntax_uid = None
             instance = models.Instance.create(
@@ -48,13 +48,13 @@ class InstanceAPI(base_api.BaseAPI):
         :yield: C-FIND results
         :rtype: pydicom.Dataset
         """
-        joins = set()
+        joins: base_api.JoinsSet = set()
 
-        response_attrs = []
-        select = [models.Instance]
-        upper_level_filters = []
+        response_attrs: base_api.ResponseAttrs = []
+        select: base_api.SelectColumns = [models.Instance]
+        upper_level_filters: base_api.UpperLevelFilters = []
 
-        skipped = set()
+        skipped: base_api.SkippedTags = set()
 
         patient_attrs = [e for e in ds if e.tag in models.Patient.mapping]
         skipped.update(e.tag for e in patient_attrs)
@@ -112,6 +112,6 @@ class InstanceAPI(base_api.BaseAPI):
 
         encoding = getattr(ds, 'SpecificCharacterSet', 'ISO-IR 6')
         if not query.count():
-            return []
+            return
 
         yield from (self.encode_response(s, response_attrs, encoding) for s in query)

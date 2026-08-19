@@ -1,9 +1,6 @@
-# -*- coding: utf-8 -*-
 import argparse
 
-from . import config
-from . import interactive
-from . import server
+from . import config, interactive, server
 
 
 def main():
