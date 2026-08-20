@@ -99,6 +99,10 @@ class PACS(component.Component):
         self.log_info('Handling store request (%r)', context)
         try:
             ds = pydicom.dcmread(payload.ds, stop_before_pixels=True)
+        except Exception as error:
+            self.log_exception(f'Failed to read incoming dataset: {error}')
+            return statuses.C_STORE_CANNOT_UNDERSTAND
+        try:
             self.c_store(ds)
         except Exception as error:
             self.log_exception(f'Failed to store dataset: {error}')

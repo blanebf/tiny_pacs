@@ -260,7 +260,7 @@ class FileStorage(StorageBase):
         file_name = os.path.join(folder, file_name)
         self.log_info('Storing incoming dataset in %s', file_name)
 
-        ds = open(full_name, 'wb')
+        ds = open(full_name, 'wb+')
         start = ds.tell()
         try:
             applicationentity.write_meta(ds, command_set, ts)

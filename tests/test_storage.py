@@ -1,3 +1,4 @@
+import os
 import uuid
 
 import pydicom
@@ -91,3 +92,41 @@ def test_get_files_empty(memory_storage: storage.InMemoryStorage):
     )
     results = memory_storage.on_store_get_files(['1.2.3.4'])
     assert not len(list(results))
+
+
+def test_file_storage_get_files(tmp_path):
+    # Mirrors the DIMSE store flow: GetFile hands out a file object, the
+    # dataset bytes are written to it, then the file must be *readable*
+    # (PACS re-reads it via pydicom before broadcasting StoreDone).
+    bus = trolleybus.EventBus()
+    _db = db.Database(bus, {'db_name': str(uuid.uuid4())})
+    file_storage = storage.FileStorage(bus, {'storage_dir': str(tmp_path)})
+    bus.start()
+
+    ts = uid.ExplicitVRLittleEndian
+    ctx = fsm.PContextDef(1, '1.2.3', ts)
+    cmd_ds = pydicom.Dataset()
+    cmd_ds.AffectedSOPClassUID = '1.2.3'
+    cmd_ds.AffectedSOPInstanceUID = '1.2.3.4'
+    fp, start = bus.send_one(events.GetFile, events.GetFilePayload(ctx, cmd_ds))
+
+    ds = pydicom.Dataset()
+    ds.SOPInstanceUID = '1.2.3.4'
+    ds.SOPClassUID = '1.2.3'
+    fp.write(dsutils.encode(ds, ts.is_implicit_VR, ts.is_little_endian))
+    fp.seek(start)
+    # PACS.on_store reads the stored dataset back from the same file object
+    stored = pydicom.dcmread(fp, stop_before_pixels=True)
+    assert stored.SOPInstanceUID == '1.2.3.4'
+    fp.close()
+
+    file_storage.bus.broadcast(events.StoreDone, ds)
+    results = list(file_storage.on_store_get_files(['1.2.3.4']))
+    assert len(results) == 1
+    sop_class_uid, file_ts, file_name = results[0]
+    assert sop_class_uid == '1.2.3'
+    assert file_ts == str(ts)
+    full_name = os.path.join(str(tmp_path), file_name)
+    assert os.path.isfile(full_name)
+    on_disk = pydicom.dcmread(full_name)
+    assert on_disk.SOPInstanceUID == '1.2.3.4'

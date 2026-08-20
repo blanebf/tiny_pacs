@@ -78,7 +78,10 @@ class Server:
         :rtype: component.Component
         """
         for _component, _config in self.config.components.items():
-            is_on = _config.get('on', False)
+            # PyYAML follows YAML 1.1 and parses the bare ``on`` key as the
+            # boolean ``True``, so ``on: true`` from a config file arrives as
+            # ``{True: True}`` — accept both key spellings.
+            is_on = _config.get('on', _config.get(True, False))
             if not is_on:
                 # Component is disabled
                 continue

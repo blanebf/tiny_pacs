@@ -1,10 +1,12 @@
+import io
 import uuid
 
 import pytest
 import trolleybus
-from pydicom import Dataset
+from pydicom import Dataset, uid
+from pynetdicom2 import fsm, statuses
 
-from tiny_pacs import db, pacs
+from tiny_pacs import db, events, pacs
 from tiny_pacs.pacs import models
 
 
@@ -262,3 +264,12 @@ def test_store(pacs_srv: pacs.PACS):
     request.Modality = None
     results = list(pacs_srv.c_find(request))
     assert len(results) == 1
+
+
+def test_store_unreadable_dataset(pacs_srv: pacs.PACS):
+    # A dataset that cannot be parsed must yield CANNOT_UNDERSTAND instead
+    # of crashing on an unbound local in the failure handler.
+    ctx = fsm.PContextDef(1, '2.3.4', uid.ImplicitVRLittleEndian)
+    payload = events.StorePayload(ctx, io.BytesIO(b'not a dicom file'))
+    status = pacs_srv.on_store(payload)
+    assert status == statuses.C_STORE_CANNOT_UNDERSTAND
