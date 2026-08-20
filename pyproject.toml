@@ -1,10 +1,12 @@
 [tool.poetry]
 name = "tiny_pacs"
 version = "0.2.0"
-description = ""
+description = "A small pure-Python PACS (Picture Archiving and Communication System)"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
 readme = "README.rst"
+homepage = "https://github.com/blanebf/tiny_pacs"
+repository = "https://github.com/blanebf/tiny_pacs"
 keywords = ["medical", "dicom", "network"]
 
 classifiers = [

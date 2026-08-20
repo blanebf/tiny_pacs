@@ -54,6 +54,8 @@ class Database(component.Component):
         """
         super().on_start()
         db_driver = self.config.get('driver', DBDrivers.SQLITE)
+        if isinstance(db_driver, str):
+            db_driver = DBDrivers(db_driver)
         if db_driver == DBDrivers.SQLITE:
             self.db = self._init_sqlite()
         elif db_driver == DBDrivers.POSTGRES:
