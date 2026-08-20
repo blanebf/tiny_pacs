@@ -1,3 +1,3 @@
-from .component import PACS
+from .component import PACS, PACSConfig
 
-__all__ = ['PACS']
+__all__ = ['PACS', 'PACSConfig']

@@ -8,9 +8,9 @@ def main() -> None:
     pacs_conf = config.Config()
     pacs_conf.update_config(args.config)
     if args.aet:
-        pacs_conf.ae['ae_title'] = [args.aet]
+        pacs_conf.ae.ae_title = [args.aet]
     if args.port:
-        pacs_conf.ae['port'] = args.port
+        pacs_conf.ae.port = args.port
     if args.interactive:
         front = interactive.TerminalFront()
         _config, run_server = front.run()

@@ -18,27 +18,22 @@ from pydicom import uid
 from pynetdicom2 import applicationentity, asceprovider, exceptions, fsm, pdu, sopclass, statuses
 
 from . import events, services
+from .config import AEConfig, TLSConfig
 
 
-def make_tls_context(tls_config: dict) -> ssl.SSLContext:
+def make_tls_context(tls_config: TLSConfig) -> ssl.SSLContext:
     """Creates a server-side TLS context from the ``tls`` AE config section.
 
-    :param tls_config: mapping with the ``certificate`` and (optionally)
-                       ``key`` entries pointing to PEM files, plus an optional
-                       ``ca`` entry for verifying client certificates
+    :param tls_config: TLS configuration with the ``certificate`` and
+                       (optionally) ``key`` entries pointing to PEM files,
+                       plus an optional ``ca`` entry for verifying client
+                       certificates
     :return: configured SSL context
-    :raises ValueError: raised when the ``tls`` config section is malformed
     """
-    if not isinstance(tls_config, dict) or 'certificate' not in tls_config:
-        raise ValueError(
-            'AE config "tls" section must be a mapping with at least '
-            'a "certificate" entry'
-        )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(tls_config['certificate'], tls_config.get('key'))
-    ca = tls_config.get('ca')
-    if ca:
-        context.load_verify_locations(ca)
+    context.load_cert_chain(tls_config.certificate, tls_config.key)
+    if tls_config.ca:
+        context.load_verify_locations(tls_config.ca)
         context.verify_mode = ssl.CERT_REQUIRED
     return context
 
@@ -88,18 +83,16 @@ class AE(applicationentity.AE):
     section (``certificate``, optional ``key`` and ``ca`` file names) all
     incoming connections are wrapped in TLS.
     """
-    def __init__(self, bus: trolleybus.EventBus, config: dict,
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: AEConfig | dict[str, Any],
                  bind_and_activate: bool = True):
         self.bus = bus
         self.log = logging.getLogger('AE')
 
-        ae_title = config.get('ae_title', ['TINY_PACS'])
-        port = config.get('port', 11112)
-        supported_ts = config.get('supported_ts')
-        max_pdu_length = config.get('max_pdu_length', 65536)
+        if not isinstance(config, AEConfig):
+            config = AEConfig.model_validate(config)
 
-        self.dump_ds = config.get('dump_ds', False)
-
+        ae_title = config.ae_title
         self.valid_aet: list[str]
         if isinstance(ae_title, list):
             main_aet = ae_title[0]
@@ -108,13 +101,15 @@ class AE(applicationentity.AE):
             main_aet = ae_title
             self.valid_aet = [ae_title]
 
-        self.ssl_context: ssl.SSLContext | None = None
-        tls = config.get('tls')
-        if tls is not None:
-            self.ssl_context = make_tls_context(tls)
+        self.dump_ds = config.dump_ds
 
-        super().__init__(main_aet, port, supported_ts, max_pdu_length,
-                         bind_and_activate)
+        self.ssl_context: ssl.SSLContext | None = None
+        if config.tls is not None:
+            self.ssl_context = make_tls_context(config.tls)
+
+        supported_ts = [uid.UID(ts) for ts in config.supported_ts]
+        super().__init__(main_aet, config.port, supported_ts,
+                         config.max_pdu_length, bind_and_activate)
         self.add_scp(sopclass.verification_scp)
         self.add_scp(sopclass.qr_find_scp)
         self.add_scp(services.qr_move_scp)
@@ -287,7 +282,7 @@ class AE(applicationentity.AE):
             raise exceptions.EventHandlingError(msg) from error
 
         datasets = list(chain.from_iterable(results))
-        return asceprovider.RemoteAEConfig(**remote_ae), len(datasets), iter(datasets)
+        return remote_ae.to_remote_ae(), len(datasets), iter(datasets)
 
     def on_receive_get(
             self, context: fsm.PContextDef, ds: pydicom.Dataset
@@ -345,4 +340,4 @@ class AE(applicationentity.AE):
             for sop_class, sop_instance
             in chain.from_iterable(f for _, f in results)
         ]
-        return asceprovider.RemoteAEConfig(**device), success, failure
+        return device.to_remote_ae(), success, failure

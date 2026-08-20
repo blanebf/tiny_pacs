@@ -35,12 +35,16 @@ Features
 * DICOM user identity negotiation (username/password) for outgoing connections
 * Interactive configuration wizard
 * YAML or JSON configuration files
+* Configuration is described with `pydantic <https://docs.pydantic.dev>`_
+  models and validated at load time; each component supplies its own config
+  model
 
 Requirements
 ------------
 
 Python ``>= 3.10``. Runtime dependencies: ``pydicom`` 3.x, ``pynetdicom2``
-0.9.x, ``peewee`` 4.x, ``PyYAML`` 6.x and ``trolleybus`` 0.2.
+0.9.x, ``peewee`` 4.x, ``PyYAML`` 6.x, ``trolleybus`` 0.2 and ``pydantic``
+2.x.
 
 For the PostgreSQL backend install a driver separately, e.g.
 ``pip install psycopg2-binary``.
@@ -97,6 +101,34 @@ Configuration
 A configuration file has three optional top-level sections: ``ae``, ``log``
 and ``components``. Anything that is not provided falls back to the built-in
 defaults.
+
+Configuration is described with `pydantic <https://docs.pydantic.dev>`_
+models and validated when it is loaded, so unknown keys, wrong types or
+out-of-range values are rejected up front with a ``pydantic.ValidationError``
+instead of surfacing as obscure errors at runtime:
+
+* ``ae`` → :class:`tiny_pacs.config.AEConfig` (with an optional nested
+  :class:`tiny_pacs.config.TLSConfig`)
+* each entry under ``components`` → the config model the corresponding
+  component provides through its ``config_model`` attribute (see
+  `Extending tiny_pacs`_)
+
+Upgrading from the older dict-based configuration:
+
+* validation is strict — keys that are unknown to the models (in ``ae``,
+  ``tls`` or any component section) are rejected at load time instead of
+  being silently ignored;
+* every component is skipped unless its entry sets ``on: true`` explicitly;
+* a component entry provided in a configuration source replaces any previous
+  entry for that component wholesale — omitted fields fall back to the model
+  defaults;
+* :class:`~tiny_pacs.config.Config` is a ``pydantic`` model, not a ``dict``:
+  use ``conf.ae``, ``conf.log``, ``conf.components`` and ``conf.model_dump()``;
+* device entries are :class:`~tiny_pacs.devices.DeviceConfig` models — e.g.
+  ``DICOMClient.remote_ae.username`` instead of ``remote_ae['username']``;
+* custom components must declare their config model (see
+  `Extending tiny_pacs`_) and be registered via
+  :func:`tiny_pacs.config.register_component`.
 
 ``ae``
 ~~~~~~
@@ -253,6 +285,51 @@ Component registry
 
 Enable exactly one storage component — all storage components react to the
 same events, so enabling more than one stores every dataset multiple times.
+
+Extending tiny_pacs
+-------------------
+
+Every component provides its own configuration as a ``pydantic`` model, and
+the config loader validates the raw ``components`` section against the model
+each component declares. To add your own component, subclass
+:class:`~tiny_pacs.component.Component` and declare a
+:class:`~tiny_pacs.component.ComponentConfig` subclass through the
+``config_model`` attribute:
+
+.. code-block:: python
+
+    from tiny_pacs import component, config
+
+    class MyConfig(component.ComponentConfig):
+        # ``on`` (enable/disable) is provided by ComponentConfig
+        some_option: str = 'default'
+
+    class MyComponent(component.Component[MyConfig]):
+        config_model = MyConfig
+
+        def on_start(self) -> None:
+            super().on_start()
+            # ``self.config`` is a validated ``MyConfig`` instance
+            self.log_info('Got option %s', self.config.some_option)
+
+Register the component so the loader knows which model to validate its
+configuration against, then enable it in your config file:
+
+.. code-block:: python
+
+    config.register_component('MyComponent', MyComponent)
+
+.. code-block:: yaml
+
+    components:
+      MyComponent:
+        on: true
+        some_option: hello
+
+Loading a configuration for ``MyComponent`` now validates ``some_option`` at
+load time, rejecting unknown keys or wrong types. Plain dicts handed directly
+to a component constructor are validated the same way, so both the file-based
+and the programmatic paths get the same guarantees.
 
 Talking to tiny_pacs: command line examples
 -------------------------------------------

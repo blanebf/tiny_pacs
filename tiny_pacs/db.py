@@ -20,20 +20,48 @@ class DBDrivers(enum.Enum):
     POSTGRES = 'postgres'
 
 
-class Database(component.Component):
+class DatabaseConfig(component.ComponentConfig):
+    """Configuration of the :class:`Database` component.
+
+    :ivar driver: DB driver to use
+    :ivar db_name: database (file) name
+    :ivar uri: connect via URI (SQLite only)
+    :ivar mode: SQLite URI open mode (``memory``, ``rwc``, ...)
+    :ivar max_conn: maximum number of pooled connections
+    :ivar host: PostgreSQL host
+    :ivar port: PostgreSQL port
+    :ivar user: PostgreSQL user
+    :ivar password: PostgreSQL password
+    """
+
+    driver: DBDrivers = DBDrivers.SQLITE
+    db_name: str | None = None
+    uri: bool = True
+    mode: str = 'memory'
+    max_conn: int = 20
+    host: str = 'localhost'
+    port: int = 5432
+    user: str = 'postgres'
+    password: str = 'postgres'
+
+
+class Database(component.Component[DatabaseConfig]):
     """DB component
 
     Handles database connections, transaction and all database models.
     """
     # TODO: Add thread locking for SQLite, to prevent timeout errors
 
-    def __init__(self, bus: trolleybus.EventBus, config: dict[str, Any]):
+    config_model = DatabaseConfig
+
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: DatabaseConfig | dict[str, Any]):
         """Initializes component
 
         :param bus: event bus
         :type bus: trolleybus.EventBus
         :param config: component config
-        :type config: dict
+        :type config: DatabaseConfig or dict
         """
         super().__init__(bus, config)
         self.subscribe(events.Atomic, self.atomic)
@@ -47,21 +75,16 @@ class Database(component.Component):
     def on_start(self) -> None:
         """Handles start event.
 
-        Initializes database and creates tables
-
-        :raises ValueError: raise `ValueError` if unsupported DB driver is
-                            provided in component config
+        Initializes database and creates tables. The DB driver is validated
+        against :class:`DBDrivers` when the configuration is loaded, so by
+        this point only supported drivers can reach the component.
         """
         super().on_start()
-        db_driver = self.config.get('driver', DBDrivers.SQLITE)
-        if isinstance(db_driver, str):
-            db_driver = DBDrivers(db_driver)
+        db_driver = self.config.driver
         if db_driver == DBDrivers.SQLITE:
             self.db = self._init_sqlite()
-        elif db_driver == DBDrivers.POSTGRES:
-            self.db = self._init_postgres()
         else:
-            raise ValueError('Unsupported DB driver')
+            self.db = self._init_postgres()
 
         # Request all available tables
         component_tables = self.broadcast(events.Tables, None)
@@ -89,35 +112,30 @@ class Database(component.Component):
 
     def _init_sqlite(self) -> peewee.SqliteDatabase:
         """Initializes SQLite database."""
-        db_name = self.config.get('db_name', 'pacs.db')
-        uri = self.config.get('uri', True)
-        mode = self.config.get('mode', 'memory')
-        max_conn = self.config.get('max_conn', 20)
-        if uri:
-            db_name = f'file:{db_name}?mode={mode}&cache=shared'
+        config = self.config
+        db_name = config.db_name or 'pacs.db'
+        if config.uri:
+            db_name = f'file:{db_name}?mode={config.mode}&cache=shared'
         self.log_info('Initialized SQLite database %s', db_name)
         return cast(
             peewee.SqliteDatabase,
-            pool.PooledSqliteDatabase(db_name, uri=uri, max_connections=max_conn)
+            pool.PooledSqliteDatabase(db_name, uri=config.uri,
+                                      max_connections=config.max_conn)
         )
 
     def _init_postgres(self) -> peewee.PostgresqlDatabase:
         """Initializes PostgreSQL database."""
-        db_name = self.config.get('db_name', 'tiny_pacs_db')
-        host = self.config.get('host', 'localhost')
-        port = self.config.get('port', 5432)
-        user = self.config.get('user', 'postgres')
-        password = self.config.get('password', 'postgres')
-        max_conn = self.config.get('max_conn', 20)
+        config = self.config
+        db_name = config.db_name or 'tiny_pacs_db'
         self.log_info(
             'Initializing PostgreSQL database with parameters: %s, %d %s',
-            host, port, user
+            config.host, config.port, config.user
         )
         return cast(
             peewee.PostgresqlDatabase,
             pool.PooledPostgresqlDatabase(
-                db_name, host=host, port=port, user=user, password=password,
-                max_connections=max_conn
+                db_name, host=config.host, port=config.port, user=config.user,
+                password=config.password, max_connections=config.max_conn
             )
         )
 

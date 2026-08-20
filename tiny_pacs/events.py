@@ -21,7 +21,7 @@ from pydicom import uid
 from pynetdicom2 import asceprovider, fsm, pdu, statuses
 
 if TYPE_CHECKING:
-    from . import client  # noqa: F401
+    from . import client, devices  # noqa: F401
 
 
 #: Single stored file: SOP Class UID, Transfer Syntax UID and either a file
@@ -199,7 +199,7 @@ class StringAgg(trolleybus.Event[None, Callable[..., peewee.Function]]):
 # Device events
 # ---------------------------------------------------------------------------
 
-class DeviceByAE(trolleybus.Event[str, dict[str, Any] | None]):
+class DeviceByAE(trolleybus.Event[str, 'devices.DeviceConfig | None']):
     """Request device settings by AE Title."""
 
 

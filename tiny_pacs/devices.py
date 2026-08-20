@@ -1,16 +1,78 @@
+import dataclasses
 from typing import Any
 
+import pydantic
 import trolleybus
+from pynetdicom2 import asceprovider
 
 from . import component, events, questions
 
 
-class Devices(component.Component):
-    def __init__(self, bus: trolleybus.EventBus, config: dict):
+class DeviceConfig(pydantic.BaseModel):
+    """Configuration of a remote DICOM device.
+
+    The fields are passed through to the DICOM association requestor, so
+    additional association parameters accepted by
+    :class:`pynetdicom2.asceprovider.RemoteAEConfig` are allowed as well.
+
+    :ivar aet: remote AE title
+    :ivar address: remote IP address or host name
+    :ivar port: remote SCP TCP port
+    :ivar username: DICOM user identity negotiation username
+    :ivar password: DICOM user identity negotiation password
+    """
+
+    model_config = pydantic.ConfigDict(extra='allow')
+
+    aet: str
+    address: str
+    port: int
+    username: str | None = None
+    password: str | None = None
+
+    def to_remote_ae(self) -> asceprovider.RemoteAEConfig:
+        """Builds a ``pynetdicom2`` remote AE configuration from this device.
+
+        Only fields accepted by
+        :class:`pynetdicom2.asceprovider.RemoteAEConfig` are forwarded, so
+        extra device keys never crash association setup.
+
+        :return: remote AE configuration
+        :rtype: asceprovider.RemoteAEConfig
+        """
+        accepted = {
+            field.name for field in dataclasses.fields(asceprovider.RemoteAEConfig)
+        } - {'user_data'}
+        kwargs = {
+            key: value
+            for key, value in self.model_dump(exclude_none=True).items()
+            if key in accepted
+        }
+        return asceprovider.RemoteAEConfig(**kwargs)
+
+
+class DevicesConfig(component.ComponentConfig):
+    """Configuration of the :class:`Devices` component.
+
+    :ivar devices: pre-configured devices by AE title
+    :ivar auto_add: register calling AE titles automatically
+    :ivar default_port: port used for auto-added devices
+    """
+
+    devices: dict[str, DeviceConfig] = pydantic.Field(default_factory=dict)
+    auto_add: bool = True
+    default_port: int = pydantic.Field(default=11112, ge=0, le=65535)
+
+
+class Devices(component.Component[DevicesConfig]):
+    config_model = DevicesConfig
+
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: DevicesConfig | dict[str, Any]):
         super().__init__(bus, config)
-        self.devices: dict[str, dict[str, Any]] = config.get('devices', {})
-        self.auto_add: bool = config.get('auto_add', True)
-        self.default_port: int = config.get('default_port', 11112)
+        self.devices: dict[str, DeviceConfig] = self.config.devices
+        self.auto_add: bool = self.config.auto_add
+        self.default_port: int = self.config.default_port
         if self.auto_add:
             self.subscribe(events.Assoc, self.add_device_from_asce)
         self.subscribe(events.DeviceByAE, self.device_by_ae)
@@ -37,7 +99,7 @@ class Devices(component.Component):
             )
         ])
 
-    def device_by_ae(self, _ae: str) -> dict[str, Any] | None:
+    def device_by_ae(self, _ae: str) -> DeviceConfig | None:
         return self.devices.get(_ae)
 
     def add_device_from_asce(self, payload: events.AssocPayload) -> None:
@@ -55,11 +117,11 @@ class Devices(component.Component):
             'Adding new device %s/%s/%d',
             calling_ae_title, remote_addr, self.default_port
         )
-        self.devices[calling_ae_title] = {
-            'aet': calling_ae_title,
-            'address': remote_addr,
-            'port': self.default_port
-        }
+        self.devices[calling_ae_title] = DeviceConfig(
+            aet=calling_ae_title,
+            address=remote_addr,
+            port=self.default_port
+        )
 
 
 class DeviceQuestion(questions.Question):

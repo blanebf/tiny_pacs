@@ -18,6 +18,7 @@ from pydicom import uid
 from pynetdicom2 import applicationentity
 
 from . import component, events, questions
+from .component import TConfig
 
 
 def _utcnow() -> datetime.datetime:
@@ -49,12 +50,12 @@ class StorageFiles(peewee.Model):
     is_stored = peewee.BooleanField(index=True, default=False)
 
 
-class StorageBase(component.Component):
+class StorageBase(component.Component[TConfig]):
     """Abstract storage component.
 
     Provides basic storage functionality, common for all storage components.
     """
-    def __init__(self, bus: trolleybus.EventBus, config: dict):
+    def __init__(self, bus: trolleybus.EventBus, config: TConfig | dict[str, Any]):
         super().__init__(bus, config)
 
         self.subscribe(events.GetFile, self.on_get_file)
@@ -226,7 +227,18 @@ class StorageBase(component.Component):
             self.log_exception(f'Failed to remove file {file_name}: {error}')
 
 
-class FileStorage(StorageBase, applicationentity.FolderStorageMixin):
+class FileStorageConfig(component.ComponentConfig):
+    """Configuration of the :class:`FileStorage` component.
+
+    :ivar storage_dir: directory for stored files; a temporary directory is
+                       created and removed on shutdown when not provided
+    """
+
+    storage_dir: str | None = None
+
+
+class FileStorage(StorageBase[FileStorageConfig],
+                  applicationentity.FolderStorageMixin):
     """Simple file storage implementation.
 
     Stores incoming datasets in a provided folder. If specific folder is not
@@ -238,9 +250,13 @@ class FileStorage(StorageBase, applicationentity.FolderStorageMixin):
     mixin gives up after ``max_iterations`` attempts to find a free file name
     and raises ``OSError`` in that case.
     """
-    def __init__(self, bus: trolleybus.EventBus, config: dict):
+
+    config_model = FileStorageConfig
+
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: FileStorageConfig | dict[str, Any]):
         super().__init__(bus, config)
-        storage_dir = config.get('storage_dir', None)
+        storage_dir = self.config.storage_dir
         if storage_dir is None:
             # TODO Gracefully remove temporary directory on shutdown
             storage_dir = tempfile.mkdtemp()
@@ -308,13 +324,14 @@ class FileStorage(StorageBase, applicationentity.FolderStorageMixin):
             )
 
 
-class InMemoryStorage(StorageBase):
+class InMemoryStorage(StorageBase[component.ComponentConfig]):
     """Simple in-memory storage component.
 
     Stores all incoming datasets in RAM. Intended for testing only.
     """
 
-    def __init__(self, bus: trolleybus.EventBus, config: dict):
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: component.ComponentConfig | dict[str, Any]):
         super().__init__(bus, config)
         self._temp_files: dict[str, tuple[BinaryIO, int]] = {}
         self._stored_files: dict[str, pydicom.Dataset] = {}
@@ -354,13 +371,14 @@ class InMemoryStorage(StorageBase):
             yield file_record.sop_class_uid, file_record.transfer_syntax, ds
 
 
-class TempFileStorage(StorageBase):
+class TempFileStorage(StorageBase[component.ComponentConfig]):
     """Simple storage component that uses temporary files to store incoming
     dataset.
 
     Intended for testing only.
     """
-    def __init__(self, bus: trolleybus.EventBus, config: dict):
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: component.ComponentConfig | dict[str, Any]):
         super().__init__(bus, config)
         self._temp_files: set[str] = set()
 

@@ -8,14 +8,15 @@ from pydicom import dataset, uid
 from pydicom.uid import ImplicitVRLittleEndian
 from pynetdicom2 import asceprovider, exceptions, fsm, pdu, statuses, uids
 
-from tiny_pacs import ae, client, devices, events
+from tiny_pacs import ae, client, config, devices, events
 
 
 @pytest.fixture
 def ae_title() -> Iterator[ae.AE]:
     bus = trolleybus.EventBus()
-    # Tests exercise message handling only, so no need to bind the port
-    _ae = ae.AE(bus, {}, bind_and_activate=False)
+    # Tests exercise message handling only, so no need to bind the port;
+    # dataset dumping is disabled because the test streams are not real DICOM
+    _ae = ae.AE(bus, config.AEConfig(dump_ds=False), bind_and_activate=False)
     yield _ae
 
 
@@ -175,5 +176,5 @@ def test_client_with_user_authentication(ae_title: ae.AE) -> None:
     dicom_client = client.Client(ae_title.bus, {}).get('REMOTE_PACS')
     # Device settings, including DICOM user authentication, are passed
     # through to the client untouched.
-    assert dicom_client.remote_ae['username'] == 'dicom_user'
-    assert dicom_client.remote_ae['password'] == 'secret'
+    assert dicom_client.remote_ae.username == 'dicom_user'
+    assert dicom_client.remote_ae.password == 'secret'

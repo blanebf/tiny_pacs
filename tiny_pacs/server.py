@@ -6,6 +6,7 @@ import logging
 import logging.config
 import time
 from collections.abc import Iterator
+from typing import Any
 
 import trolleybus
 
@@ -71,18 +72,18 @@ class Server:
         if self.ae is not None:
             self.ae.quit()
 
-    def initialize_components(self) -> Iterator[component.Component]:
+    def initialize_components(self) -> Iterator[component.Component[Any]]:
         """Component initialization
 
         :yield: initializes components
         :rtype: component.Component
         """
         for _component, _config in self.config.components.items():
-            # PyYAML follows YAML 1.1 and parses the bare ``on`` key as the
-            # boolean ``True``, so ``on: true`` from a config file arrives as
-            # ``{True: True}`` — accept both key spellings.
-            is_on = _config.get('on', _config.get(True, False))
-            if not is_on:
+            # Component configurations are validated against the config model
+            # each component provides (see ``Component.config_model``) when
+            # the configuration is loaded, so by this point every entry is a
+            # validated model instance.
+            if not _config.on:
                 # Component is disabled
                 continue
 

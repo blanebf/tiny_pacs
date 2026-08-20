@@ -9,7 +9,7 @@ import trolleybus
 from pydicom import filereader, uid
 from pynetdicom2 import applicationentity, asceprovider, sopclass, statuses, uids
 
-from . import component, events
+from . import component, devices, events
 
 
 class FindRoot(enum.Enum):
@@ -64,10 +64,23 @@ class DestinationUnknownError(Exception):
     """C-MOVE destination unknown failure"""
 
 
-class Client(component.Component):
+class ClientConfig(component.ComponentConfig):
+    """Configuration of the :class:`Client` component.
+
+    The client has no settings of its own (device settings come from the
+    :class:`~tiny_pacs.devices.Devices` component); this model exists so the
+    component provides its own config type to the loader like every other
+    component.
+    """
+
+
+class Client(component.Component[ClientConfig]):
     """Simple component that can create DICOM Client for provided AE Title."""
 
-    def __init__(self, bus: trolleybus.EventBus, config: dict):
+    config_model = ClientConfig
+
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: ClientConfig | dict[str, Any]):
         super().__init__(bus, config)
         self.subscribe(events.GetClient, self.get)
 
@@ -101,12 +114,26 @@ class DICOMClient:
     :ivar log: logger
     """
 
-    def __init__(self, local_ae: str, remote_ae: dict[str, Any]):
+    def __init__(self, local_ae: str,
+                 remote_ae: devices.DeviceConfig | dict[str, Any]):
         self.msg_id = 0
         self.local_ae = local_ae
+        if isinstance(remote_ae, dict):
+            remote_ae = devices.DeviceConfig.model_validate(remote_ae)
+        # ``pynetdicom2`` requests associations from a ``RemoteAEConfig``; a
+        # ``DeviceConfig`` carries the same fields plus nothing the
+        # association layer needs, so convert at the boundary.
         self.remote_ae = remote_ae
         self.aet = applicationentity.ClientAE(local_ae)
         self.log = logging.getLogger('DICOMClient')
+
+    def _remote_ae_config(self) -> asceprovider.RemoteAEConfig:
+        """Returns the remote AE settings as a ``pynetdicom2`` config object.
+
+        :return: remote AE configuration
+        :rtype: asceprovider.RemoteAEConfig
+        """
+        return self.remote_ae.to_remote_ae()
 
     def echo(self) -> None:
         """Sends C-ECHO message (verification SCU)
@@ -115,7 +142,7 @@ class DICOMClient:
         """
         self.log.info('Sending C-ECHO request to %r', self.remote_ae)
         self.aet.add_scu(sopclass.verification_scu)
-        with self.aet.request_association(self.remote_ae) as asce:
+        with self.aet.request_association(self._remote_ae_config()) as asce:
             service = asce.get_scu(uids.VERIFICATION_SOP_CLASS)
             self.msg_id += 1
             status = service(self.msg_id)
@@ -137,7 +164,7 @@ class DICOMClient:
         """
         self.aet.add_scu(sopclass.qr_find_scu)
         self.log.info('Sending C-FIND request to %r', self.remote_ae)
-        with self.aet.request_association(self.remote_ae) as asce:
+        with self.aet.request_association(self._remote_ae_config()) as asce:
             self.log.debug('Association established with %r', self.remote_ae)
             service = asce.get_scu(root.value)
             self.msg_id += 1
@@ -171,7 +198,7 @@ class DICOMClient:
         self.aet.supported_ts = frozenset([transfer_syntax])
         self.aet.supported_scu[sop_class_uid] = sopclass.storage_scu
         self.aet.update_context_def_list([sop_class_uid])
-        with self.aet.request_association(self.remote_ae) as asce:
+        with self.aet.request_association(self._remote_ae_config()) as asce:
             self.log.debug('Association established with %r', self.remote_ae)
             self.store_with_asce(asce, ds, sop_class_uid)
 
@@ -211,7 +238,7 @@ class DICOMClient:
         self.log.info('Sending C-MOVE request to %r -> %s', self.remote_ae, dest_ae)
 
         self.aet.add_scu(sopclass.qr_move_scu)
-        with self.aet.request_association(self.remote_ae) as asce:
+        with self.aet.request_association(self._remote_ae_config()) as asce:
             self.log.debug('Association established with %r', self.remote_ae)
             self._move(asce, ds, dest_ae, root)
 
@@ -243,7 +270,7 @@ class DICOMClient:
         ds.QueryRetrieveLevel = 'IMAGE'
         self.aet.add_scu(sopclass.qr_move_scu)
         if asce is None:
-            with self.aet.request_association(self.remote_ae) as asce:
+            with self.aet.request_association(self._remote_ae_config()) as asce:
                 self.log.debug('Association established with %r', self.remote_ae)
                 self._move(asce, ds, dest_ae, MoveRoot.STUDY)
         else:

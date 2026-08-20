@@ -1,8 +1,9 @@
 """Base component implementation"""
 import logging
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar, cast
 
+import pydantic
 import trolleybus
 
 from . import questions
@@ -11,7 +12,50 @@ TP = TypeVar('TP')
 TR = TypeVar('TR')
 
 
-class Component(trolleybus.EmitterMixin):
+class ComponentConfig(pydantic.BaseModel):
+    """Base configuration model for all components.
+
+    Every component declares its own configuration model by subclassing this
+    model (see :attr:`Component.config_model`); the config loader validates
+    the raw component configuration against that model at load time.
+
+    :ivar on: enables the component; disabled components are skipped
+    """
+
+    model_config = pydantic.ConfigDict(extra='forbid')
+
+    #: Whether the component is enabled. Components are skipped unless ``on``
+    #: is true, so the default is false: an entry that omits ``on`` does not
+    #: enable the component. The built-in default components set ``on``
+    #: explicitly (see :data:`tiny_pacs.config.DEFAULT_COMPONENTS`).
+    on: bool = False
+
+    @pydantic.model_validator(mode='before')
+    @classmethod
+    def _normalize_yaml_keys(cls, data: Any) -> Any:
+        # PyYAML follows YAML 1.1 and parses the bare ``on``/``off`` keys as
+        # booleans, so ``on: true`` from a config file arrives as
+        # ``{True: True}`` — rewrite the boolean keys back to the ``on``
+        # flag. A bare ``off:`` key is parsed as ``False`` and means the
+        # negation of ``on``.
+        if not isinstance(data, dict) or (True not in data and False not in data):
+            return data
+        result: dict[Any, Any] = {}
+        for key, value in data.items():
+            if key is True:
+                result['on'] = value
+            elif key is False:
+                if isinstance(value, bool):
+                    result['on'] = not value
+            else:
+                result[key] = value
+        return result
+
+
+TConfig = TypeVar('TConfig', bound=ComponentConfig)
+
+
+class Component(trolleybus.EmitterMixin, Generic[TConfig]):
     """Base component class
 
     Subscribes to common lifecycle events, sets up component logging and
@@ -30,12 +74,24 @@ class Component(trolleybus.EmitterMixin):
           which the :class:`~tiny_pacs.db.Database` component needs in order
           to collect tables from other components.
 
+    Configuration is provided by a :class:`ComponentConfig` subclass declared
+    through :attr:`config_model`. Plain dicts passed to the constructor are
+    validated against that model automatically.
+
     :ivar bus: event bus
-    :ivar config: component configuration
+    :ivar config: validated component configuration
     """
 
     #: Component priority in the event bus. Higher priority runs first.
     priority = trolleybus.DEFAULT_PRIORITY
+
+    #: Component configuration model. Subclasses override this attribute with
+    #: their own :class:`ComponentConfig` subclass; the config loader uses it
+    #: to validate the component configuration at load time.
+    config_model: ClassVar[type[ComponentConfig]] = ComponentConfig
+
+    #: Validated component configuration
+    config: TConfig
 
     @classmethod
     def name(cls) -> str:
@@ -48,9 +104,13 @@ class Component(trolleybus.EmitterMixin):
         """
         return cls.__name__
 
-    def __init__(self, bus: trolleybus.EventBus, config: dict[str, Any]):
+    def __init__(self, bus: trolleybus.EventBus, config: TConfig | dict[str, Any]):
         super().__init__(bus)
-        self.config = config
+        model_cls = type(self).config_model
+        if isinstance(config, model_cls):
+            self.config = config
+        else:
+            self.config = cast('TConfig', model_cls.model_validate(config))
         self._logger = logging.getLogger(self.name())
 
         self.subscribe(trolleybus.OnStart, self._handle_start)

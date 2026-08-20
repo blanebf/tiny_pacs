@@ -38,7 +38,16 @@ QR_LEVEL = {
 }
 
 
-class PACS(component.Component):
+class PACSConfig(component.ComponentConfig):
+    """Configuration of the :class:`PACS` component.
+
+    The PACS component currently has no settings beyond the common ``on``
+    flag; this model exists so the component provides its own config type to
+    the loader like every other component.
+    """
+
+
+class PACS(component.Component[PACSConfig]):
     """"Component that implements PACS services themselves.
 
     Provides handling to the following events:
@@ -54,13 +63,16 @@ class PACS(component.Component):
     :module:`~tiny_pacs.storage`
     """
 
-    def __init__(self, bus: trolleybus.EventBus, config: dict):
+    config_model = PACSConfig
+
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: PACSConfig | dict[str, Any]):
         """Component initialization
 
         :param bus: event bus
         :type bus: trolleybus.EventBus
         :param config: component configuration
-        :type config: dict
+        :type config: PACSConfig or dict
         """
         super().__init__(bus, config)
         self.patient_api = patient_api.PatientAPI(bus)
