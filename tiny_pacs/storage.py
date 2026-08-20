@@ -5,6 +5,7 @@ Module provides various implementation of storage components.
 import datetime
 import io
 import os
+import pathlib
 import shutil
 import tempfile
 from collections.abc import Iterable
@@ -224,11 +225,17 @@ class StorageBase(component.Component):
             self.log_exception(f'Failed to remove file {file_name}: {error}')
 
 
-class FileStorage(StorageBase):
+class FileStorage(StorageBase, applicationentity.FolderStorageMixin):
     """Simple file storage implementation.
 
     Stores incoming datasets in a provided folder. If specific folder is not
     provided in the component configuration, temporary one is created.
+
+    Unique file naming and storage file creation (preamble and file meta
+    information) are provided by
+    :class:`pynetdicom2.applicationentity.FolderStorageMixin`. Note that the
+    mixin gives up after ``max_iterations`` attempts to find a free file name
+    and raises ``OSError`` in that case.
     """
     def __init__(self, bus: trolleybus.EventBus, config: dict):
         super().__init__(bus, config)
@@ -253,23 +260,16 @@ class FileStorage(StorageBase):
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
         ts = payload.context.supported_ts
-        full_name = self.get_file_name(sop_instance_uid)
-        folder_path, file_name = os.path.split(full_name)
-        os.makedirs(folder_path, exist_ok=True)
-        folder = os.path.basename(folder_path)
-        file_name = os.path.join(folder, file_name)
+        folder = pathlib.Path(self.get_folder_path())
+        folder.mkdir(parents=True, exist_ok=True)
+        # Unique file name and file creation (preamble and file meta
+        # information) come from FolderStorageMixin.
+        ds, start = self.get_storage_file(payload.context, command_set, folder)
+        full_name = cast(io.BufferedRandom, ds).name
+        file_name = os.path.relpath(full_name, self.storage_dir)
         self.log_info('Storing incoming dataset in %s', file_name)
-
-        ds = open(full_name, 'wb+')
-        start = ds.tell()
-        try:
-            applicationentity.write_meta(ds, command_set, ts)
-        except Exception:
-            ds.close()
-            raise
-        else:
-            self.new_file(sop_instance_uid, sop_class_uid, ts, file_name)
-            return ds, start
+        self.new_file(sop_instance_uid, sop_class_uid, ts, file_name)
+        return ds, start
 
     def on_store_done(self, ds: pydicom.Dataset):
         self.file_stored(ds.SOPInstanceUID)
@@ -293,24 +293,6 @@ class FileStorage(StorageBase):
         """
         now = _utcnow()
         return os.path.join(self.storage_dir, now.strftime('%Y%m%d'))
-
-    def get_file_name(self, sop_instance_uid: str) -> str:
-        """Gets full file name for an incoming file
-
-        :param sop_instance_uid: incoming file SOP Instance UID
-        :type sop_instance_uid: str
-        :return: full file name
-        :rtype: str
-        """
-        folder = self.get_folder_path()
-        file_name = f'{sop_instance_uid}.dcm'
-        full_name = os.path.join(folder, file_name)
-        i = 0
-        while os.path.exists(full_name):
-            i += 1
-            file_name = f'{sop_instance_uid}_{i}.dcm'
-            full_name = os.path.join(folder, file_name)
-        return full_name
 
     def cleanup(self, _: None = None):
         """Cleans up storage directory.

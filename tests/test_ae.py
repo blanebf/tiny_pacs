@@ -1,10 +1,10 @@
 import pytest
 import trolleybus
-from pydicom import dataset
+from pydicom import dataset, uid
 from pydicom.uid import ImplicitVRLittleEndian
-from pynetdicom2 import fsm, pdu, statuses, uids
+from pynetdicom2 import exceptions, fsm, pdu, statuses, uids
 
-from tiny_pacs import ae, devices, events
+from tiny_pacs import ae, client, devices, events
 
 
 @pytest.fixture
@@ -93,3 +93,76 @@ def test_move(ae_title: ae.AE):
     assert remote_ae.aet == 'REMOTE_PACS'
     assert remote_ae.address == '127.0.0.1'
     assert remote_ae.port == 11112
+
+
+def test_move_with_user_authentication(ae_title: ae.AE):
+    def callback(payload: events.MovePayload):
+        return [dataset.Dataset()]
+
+    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_MOVE_SOP_CLASS, ImplicitVRLittleEndian)
+    ds = dataset.Dataset()
+    devices.Devices(
+        ae_title.bus,
+        {
+            'devices': {
+                'REMOTE_PACS': {
+                    'address': '127.0.0.1', 'port': 11112, 'aet': 'REMOTE_PACS',
+                    'username': 'dicom_user', 'password': 'secret'
+                }
+            }
+        }
+    )
+    ae_title.bus.subscribe(events.Move, callback)
+    remote_ae, nop, _ = ae_title.on_receive_move(ctx, ds, 'REMOTE_PACS')
+    assert nop == 1
+    # DICOM user authentication parameters flow through to the remote AE config
+    assert remote_ae.username == 'dicom_user'
+    assert remote_ae.password == 'secret'
+
+
+@pytest.mark.parametrize('tls_config', [True, {}, {'key': '/nonexistent.key'}])
+def test_tls_invalid_config(tls_config):
+    bus = trolleybus.EventBus()
+    with pytest.raises(ValueError):
+        ae.AE(bus, {'tls': tls_config, 'port': 0}, bind_and_activate=False)
+
+
+def test_echo(ae_title: ae.AE):
+    ctx = fsm.PContextDef(1, uids.VERIFICATION_SOP_CLASS, ImplicitVRLittleEndian)
+    status = ae_title.on_receive_echo(ctx)
+    assert status.is_success
+
+
+def test_commitment_response(ae_title: ae.AE):
+    success = [(uid.UID('1.2.3'), uid.UID('1.2.3.4'))]
+    failure = [(uid.UID('1.2.3'), uid.UID('1.2.3.5'), 0x0112)]
+    ae_title.on_commitment_response(uid.UID('1.2.3.4.5'), success, failure)
+
+
+def test_association_response(ae_title: ae.AE):
+    response = pdu.AAssociateAcPDU('TINY_PACS', 'TEST', [])
+    ae_title.on_association_response(response)
+
+
+def test_abort_and_timeout(ae_title: ae.AE):
+    ae_title.on_abort(None, exceptions.AssociationAbortedError(1, 0))
+    ae_title.on_dcm_timeout(None, exceptions.DCMTimeoutError())
+
+
+def test_client_with_user_authentication(ae_title: ae.AE):
+    devices.Devices(
+        ae_title.bus,
+        {
+            'devices': {
+                'REMOTE_PACS': {
+                    'address': '127.0.0.1', 'port': 11112, 'aet': 'REMOTE_PACS',
+                    'username': 'dicom_user', 'password': 'secret'
+                }
+            }
+        }
+    )
+    dicom_client = client.Client(ae_title.bus, {}).get('REMOTE_PACS')
+    # Device settings, including DICOM user authentication, are passed
+    # through to the client untouched.
+    assert dicom_client.remote_ae['username'] == 'dicom_user'
+    assert dicom_client.remote_ae['password'] == 'secret'

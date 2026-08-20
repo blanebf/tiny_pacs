@@ -31,6 +31,8 @@ Features
 * SQLite (file or in-memory, the default) and PostgreSQL backends with
   connection pooling
 * Storage backends: on-disk files, in-memory datasets or temporary files
+* TLS for incoming DICOM connections
+* DICOM user identity negotiation (username/password) for outgoing connections
 * Interactive configuration wizard
 * YAML or JSON configuration files
 
@@ -108,6 +110,18 @@ Application entity settings:
 * ``dump_ds`` — dump datasets and PDUs to the log (default: ``true``)
 * ``supported_ts`` — a list of supported transfer syntax UIDs (default: the
   common uncompressed, JPEG, JPEG-LS, JPEG 2000, MPEG and RLE syntaxes)
+* ``tls`` — when present, all incoming connections are wrapped in TLS. A
+  mapping with the ``certificate`` and, if the key is stored separately, the
+  ``key`` entry pointing to PEM files, and an optional ``ca`` entry. When
+  ``ca`` is given, client certificates are verified against it:
+
+.. code-block:: yaml
+
+    ae:
+      tls:
+        certificate: /etc/tiny_pacs/server.pem
+        key: /etc/tiny_pacs/server.key
+        ca: /etc/tiny_pacs/ca.pem
 
 ``log``
 ~~~~~~~
@@ -180,6 +194,10 @@ Example
             aet: WORKSTATION
             address: 192.168.1.10
             port: 11113
+            # Optional DICOM user identity for outgoing connections to this
+            # device (used for C-MOVE sub-operations and Storage Commitment):
+            # username: dicom_user
+            # password: secret
       PACS:
         on: true
       FileStorage:
@@ -264,19 +282,20 @@ C-FIND (list patients whose name matches ``DOE*``):
         --address localhost --port 11112 --level patient \
         --attr 'PatientName=DOE*' 'PatientID='
 
-C-MOVE (retrieve one study, receiving the datasets on a local storage SCP):
+C-MOVE (retrieve one study):
 
 .. code-block:: bash
 
     python -m pynetdicom2 move --local_aet CLIENT --aet TINY_PACS \
         --address localhost --port 11112 --level study \
-        --attr 'StudyInstanceUID=1.2.3.4' \
-        --local_port 11113 --storage_dir ./received
+        --attr 'StudyInstanceUID=1.2.3.4'
 
 The server knows C-MOVE destinations only through its ``Devices`` registry —
-``--local_aet`` above works because ``auto_add`` registers the calling AE
-title, and ``Devices.default_port`` must then match ``--local_port``
-(or the device must be pre-configured explicitly).
+either pre-configure the destination device, or rely on ``auto_add`` to
+register it on its first association. Note that in ``pynetdicom2`` 0.9.8 the
+CLI's own move receiver (``--local_port``) does not accept storage
+associations, so use a real SCP (for example a second ``tiny_pacs``
+instance) as the destination.
 
 C-GET is supported on the server side as well and can be exercised with any
 C-GET capable service class user.

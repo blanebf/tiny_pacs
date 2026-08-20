@@ -74,6 +74,14 @@ def qr_move_scp(asce: asceprovider.AssociationAcceptor,
     :param msg: incoming message
     :type msg: dimsemessages.CMoveRQMessage
     """
+    if not msg.data_set:
+        # A C-MOVE-RQ without an Identifier cannot be processed (mirrors the
+        # built-in service): respond with a failure status instead of aborting
+        # the association.
+        _send_ops_response(asce, ctx, msg, statuses.C_MOVE_UNABLE_TO_PROCESS,
+                           0, 0, 0, 0)
+        return
+
     ds = dsutils.decode(cast(bytes, msg.data_set),
                         ctx.supported_ts.is_implicit_VR,
                         ctx.supported_ts.is_little_endian)
@@ -112,8 +120,12 @@ def qr_move_scp(asce: asceprovider.AssociationAcceptor,
         for sop_class, data_set in datasets:
             # request an association with destination send C-STORE
             service = assoc.get_scu(sop_class)
-            # PS3.7 9.1.1.1.3: message IDs must be non-zero
-            status = service(data_set, completed + 1)
+            # PS3.7 9.1.1.1.3: message IDs must be non-zero; PS3.4 C.4.2.1.3:
+            # C-STORE sub-operations of a C-MOVE carry the Move Originator
+            # fields (the AE title and message ID of the C-MOVE request).
+            status = service(data_set, completed + 1,
+                             move_originator_aet=asce.remote_ae,
+                             move_originator_message_id=msg.message_id)
             if status.is_failure:
                 failed += 1
             elif status.is_warning:
@@ -139,6 +151,14 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
     :param msg: incoming message
     :type msg: dimsemessages.CGetRQMessage
     """
+    if not msg.data_set:
+        # A C-GET-RQ without an Identifier cannot be processed (mirrors the
+        # built-in C-MOVE/C-FIND services): respond with a failure status
+        # instead of aborting the association.
+        _send_ops_response(asce, ctx, msg, statuses.C_GET_UNABLE_TO_PROCESS,
+                           0, 0, 0, 0)
+        return
+
     ds = dsutils.decode(cast(bytes, msg.data_set),
                         ctx.supported_ts.is_implicit_VR,
                         ctx.supported_ts.is_little_endian)

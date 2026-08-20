@@ -2,24 +2,91 @@
 
 Handles all relevant SCPs and emits appropriate events.
 """
+import functools
 import io
 import logging
+import socket
+import socketserver
+import ssl
 from collections.abc import Iterable, Iterator
 from itertools import chain
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import pydicom
 import trolleybus
 from pydicom import uid
-from pynetdicom2 import applicationentity, asceprovider, exceptions, fsm, sopclass, statuses
+from pynetdicom2 import applicationentity, asceprovider, exceptions, fsm, pdu, sopclass, statuses
 
 from . import events, services
+
+
+def make_tls_context(tls_config: dict) -> ssl.SSLContext:
+    """Creates a server-side TLS context from the ``tls`` AE config section.
+
+    :param tls_config: mapping with the ``certificate`` and (optionally)
+                       ``key`` entries pointing to PEM files, plus an optional
+                       ``ca`` entry for verifying client certificates
+    :return: configured SSL context
+    :raises ValueError: raised when the ``tls`` config section is malformed
+    """
+    if not isinstance(tls_config, dict) or 'certificate' not in tls_config:
+        raise ValueError(
+            'AE config "tls" section must be a mapping with at least '
+            'a "certificate" entry'
+        )
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(tls_config['certificate'], tls_config.get('key'))
+    ca = tls_config.get('ca')
+    if ca:
+        context.load_verify_locations(ca)
+        context.verify_mode = ssl.CERT_REQUIRED
+    return context
+
+
+class _TLSThreadingTCPServer(socketserver.ThreadingTCPServer):
+    """Threading TCP server that wraps incoming connections in TLS.
+
+    Similar to pynetdicom2's private ``ssl_ae._SSLThreadingTCPServer``, except
+    that the TLS handshake happens in the per-connection handler thread with a
+    deadline, not on the accept loop thread: a stalled or failing handshake
+    cannot block acceptance of new connections.
+    """
+    allow_reuse_address = True
+    daemon_threads = True
+
+    #: TLS handshake deadline in seconds
+    handshake_timeout = 15.0
+
+    def __init__(self, context: ssl.SSLContext,
+                 server_address: tuple[str, int],
+                 RequestHandlerClass: Any,
+                 bind_and_activate: bool = True):
+        super().__init__(server_address, RequestHandlerClass, bind_and_activate)
+        self.context = context
+
+    # The supertype also allows datagram ``(bytes, socket)`` requests; a TLS
+    # server only ever receives stream sockets.
+    def process_request_thread(self, request: socket.socket,  # type: ignore[override]
+                               client_address: tuple[str, int]) -> None:
+        try:
+            request.settimeout(self.handshake_timeout)
+            request = self.context.wrap_socket(request, server_side=True)
+            request.settimeout(None)
+        except OSError:
+            logging.getLogger('AE').warning(
+                'TLS handshake failed for %s', client_address
+            )
+            request.close()
+            return
+        super().process_request_thread(request, client_address)
 
 
 class AE(applicationentity.AE):
     """Application Entity with SCP implementations.
 
-    Adds all relevant SCPs for tiny PACS.
+    Adds all relevant SCPs for tiny PACS. When the config contains a ``tls``
+    section (``certificate``, optional ``key`` and ``ca`` file names) all
+    incoming connections are wrapped in TLS.
     """
     def __init__(self, bus: trolleybus.EventBus, config: dict,
                  bind_and_activate: bool = True):
@@ -41,6 +108,11 @@ class AE(applicationentity.AE):
             main_aet = ae_title
             self.valid_aet = [ae_title]
 
+        self.ssl_context: ssl.SSLContext | None = None
+        tls = config.get('tls')
+        if tls is not None:
+            self.ssl_context = make_tls_context(tls)
+
         super().__init__(main_aet, port, supported_ts, max_pdu_length,
                          bind_and_activate)
         self.add_scp(sopclass.verification_scp)
@@ -50,6 +122,24 @@ class AE(applicationentity.AE):
         self.add_scp(sopclass.storage_scp)
         self.add_scp(sopclass.StorageCommitment())
         self.bus.subscribe(events.MainAET, lambda _: self.get_main_aet())
+
+    def _create_server(self, port: int, bind_and_activate: bool,
+                       max_pdu_length: int) -> socketserver.TCPServer:
+        if self.ssl_context is None:
+            return super()._create_server(port, bind_and_activate,
+                                          max_pdu_length)
+        # ``local_ae`` is typed against ``AEBaseProto`` whose ``on_receive_move``
+        # yields plain datasets; tiny_pacs intentionally yields stored-file tuples
+        # instead (see the ``on_receive_move`` override below).
+        return _TLSThreadingTCPServer(
+            self.ssl_context, ('', port),
+            functools.partial(
+                applicationentity.RequestHandler,
+                local_ae=self,  # type: ignore[arg-type]
+                max_pdu_length=max_pdu_length
+            ),
+            bind_and_activate
+        )
 
     def get_main_aet(self) -> str:
         """Returns main AE title
@@ -80,6 +170,45 @@ class AE(applicationentity.AE):
             self.log.debug('ASSOCIATE-RQ %r', assoc)
 
         self.bus.broadcast(events.Assoc, events.AssocPayload(asce, assoc))
+
+    def on_association_response(self, response: pdu.AAssociateAcPDU) -> None:
+        """Handles response to an outgoing association request."""
+        self.log.info('Outgoing association accepted')
+        if self.dump_ds:
+            self.log.debug('ASSOCIATE-AC %r', response)
+
+    def on_abort(self, asce: asceprovider.Association,
+                 exc: exceptions.AssociationAbortedError) -> None:
+        """Handles association aborts."""
+        self.log.warning('Association aborted: %r', exc)
+
+    def on_dcm_timeout(self, asce: asceprovider.Association,
+                       exc: exceptions.DCMTimeoutError) -> None:
+        """Handles DICOM timeouts on associations."""
+        self.log.warning('Association timed out: %r', exc)
+
+    def on_receive_echo(self, context: fsm.PContextDef) -> statuses.Status:
+        """Handles C-ECHO requests.
+
+        Logged at DEBUG level: verification is the standard periodic
+        connectivity probe, so per-echo logging would produce unbounded
+        log volume on busy PACSes.
+        """
+        self.log.debug('Received C-ECHO %r', context)
+        return statuses.SUCCESS
+
+    def on_commitment_response(
+            self, transaction_uid: uid.UID,
+            success: Iterable[tuple[uid.UID, uid.UID]],
+            failure: Iterable[tuple[uid.UID, uid.UID, int]]
+    ) -> None:
+        """Handles incoming Storage Commitment reports (N-EVENT-REPORT)."""
+        success = list(success)
+        failure = list(failure)
+        self.log.info('Received Storage Commitment report, '
+                      'Transaction UID %s', transaction_uid)
+        self.log.debug('Storage Commitment report, committed: %r, failed: %r',
+                       success, failure)
 
     def on_receive_store(self, context: fsm.PContextDef,
                          ds: BinaryIO | bytes) -> statuses.Status:

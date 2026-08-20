@@ -130,3 +130,44 @@ def test_file_storage_get_files(tmp_path):
     assert os.path.isfile(full_name)
     on_disk = pydicom.dcmread(full_name)
     assert on_disk.SOPInstanceUID == '1.2.3.4'
+
+
+def test_file_storage_unique_file_names(tmp_path):
+    # If the default file name is already taken on disk, a unique name is
+    # chosen (FolderStorageMixin provides the naming scheme). The SOP Instance
+    # UID column is unique in the DB, so the collision is simulated by
+    # pre-creating a file with the expected name.
+    bus = trolleybus.EventBus()
+    _db = db.Database(bus, {'db_name': str(uuid.uuid4())})
+    file_storage = storage.FileStorage(bus, {'storage_dir': str(tmp_path)})
+    bus.start()
+
+    # Pre-create the default file name so the storage must fall back to a
+    # unique ``_1`` suffix.
+    folder = file_storage.get_folder_path()
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, '1.2.3.4.dcm'), 'wb'):
+        pass
+
+    ts = uid.ExplicitVRLittleEndian
+    ctx = fsm.PContextDef(1, '1.2.3', ts)
+    cmd_ds = pydicom.Dataset()
+    cmd_ds.AffectedSOPClassUID = '1.2.3'
+    cmd_ds.AffectedSOPInstanceUID = '1.2.3.4'
+
+    fp, start = bus.send_one(events.GetFile, events.GetFilePayload(ctx, cmd_ds))
+    ds = pydicom.Dataset()
+    ds.SOPInstanceUID = '1.2.3.4'
+    ds.SOPClassUID = '1.2.3'
+    fp.write(dsutils.encode(ds, ts.is_implicit_VR, ts.is_little_endian))
+    fp.seek(start)
+    fp.close()
+
+    record = storage.StorageFiles.get(
+        storage.StorageFiles.sop_instance_uid == '1.2.3.4'
+    )
+    assert os.path.basename(record.file_name) == '1.2.3.4_1.dcm'
+    full_name = os.path.join(str(tmp_path), record.file_name)
+    assert os.path.isfile(full_name)
+    on_disk = pydicom.dcmread(full_name)
+    assert on_disk.SOPInstanceUID == '1.2.3.4'
