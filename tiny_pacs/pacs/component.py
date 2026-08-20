@@ -1,9 +1,12 @@
 import enum
 from collections.abc import Iterator
 from itertools import chain
+from typing import Any
 
+import peewee
 import pydicom
 import trolleybus
+from pydicom.uid import UID
 from pynetdicom2 import statuses
 
 from .. import component, events
@@ -72,7 +75,7 @@ class PACS(component.Component):
         self.subscribe(events.Commitment, self.on_commitment)
         self.subscribe(events.Tables, self.tables)
 
-    def tables(self, _: None = None):
+    def tables(self, _: None = None) -> list[type[peewee.Model]]:
         """Returns a list of tables for DB component
 
         :return: list of tables used by this component
@@ -80,14 +83,14 @@ class PACS(component.Component):
         """
         return [models.Patient, models.Study, models.Series, models.Instance]
 
-    def atomic(self):
+    def atomic(self) -> Any:
         """Context manager for handling simple transactions
 
         :return: atomic transaction
         """
         return self.send_one(events.Atomic, None)
 
-    def on_store(self, payload: events.StorePayload):
+    def on_store(self, payload: events.StorePayload) -> statuses.Status:
         """Handling of incoming storage request
 
         :param payload: presentation context and incoming dataset
@@ -113,7 +116,8 @@ class PACS(component.Component):
             self.broadcast(events.StoreDone, ds)
             return statuses.SUCCESS
 
-    def on_find(self, payload: events.FindPayload):
+    def on_find(self, payload: events.FindPayload) -> Iterator[tuple[pydicom.Dataset,
+                                                                     statuses.Status]]:
         """Handling of incoming find request
 
         :param payload: presentation context and incoming dataset
@@ -124,7 +128,7 @@ class PACS(component.Component):
         results = self.c_find(payload.ds)
         yield from ((r, statuses.C_FIND_PENDING) for r in results)
 
-    def on_move(self, payload: events.MovePayload):
+    def on_move(self, payload: events.MovePayload) -> list[events.StoredFile]:
         """Handling of incoming move request
 
         :param payload: presentation context, incoming dataset and move
@@ -141,7 +145,7 @@ class PACS(component.Component):
         results = self.broadcast(events.GetFiles, instances)
         return list(chain.from_iterable(results))
 
-    def on_get(self, payload: events.GetPayload):
+    def on_get(self, payload: events.GetPayload) -> list[events.StoredFile]:
         """Handling of incoming get request
 
         :param payload: presentation context and incoming dataset
@@ -156,7 +160,8 @@ class PACS(component.Component):
         results = self.broadcast(events.GetFiles, instances)
         return list(chain.from_iterable(results))
 
-    def on_commitment(self, uids: list):
+    def on_commitment(self, uids: list[tuple[UID, UID]]
+                      ) -> tuple[list[tuple[UID, UID]], list[tuple[UID, UID]]]:
         """Handling of incoming storage commitment request
 
         :param uids: list of tuple (SOP Class UID, SOP Instance UID)
@@ -192,7 +197,7 @@ class PACS(component.Component):
         elif level == 'IMAGE':
             yield from self.instance_api.c_find(ds)
 
-    def c_store(self, ds: pydicom.Dataset):
+    def c_store(self, ds: pydicom.Dataset) -> None:
         """C-STORE implementation
 
         Store dataset attributes in a database
@@ -206,7 +211,7 @@ class PACS(component.Component):
             series = self.series_api.c_store(study, ds)
             self.instance_api.c_store(series, ds)
 
-    def c_move_get_instances(self, ds: pydicom.Dataset):
+    def c_move_get_instances(self, ds: pydicom.Dataset) -> Iterator[tuple[str, str, str]]:
         """Gets instances for C-MOVE request
 
         :param ds: incoming dataset

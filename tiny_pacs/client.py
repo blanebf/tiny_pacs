@@ -2,11 +2,12 @@
 import enum
 import logging
 from collections.abc import Iterator
+from typing import Any
 
 import pydicom
 import trolleybus
 from pydicom import filereader, uid
-from pynetdicom2 import applicationentity, asceprovider, sopclass, uids
+from pynetdicom2 import applicationentity, asceprovider, sopclass, statuses, uids
 
 from . import component, events
 
@@ -38,7 +39,7 @@ class DICOMClientError(Exception):
 
     :ivar status: DICOM error status code
     """
-    def __init__(self, status, *args):
+    def __init__(self, status: statuses.Status, *args: object):
         super().__init__(*args)
         self.status = status
 
@@ -70,7 +71,7 @@ class Client(component.Component):
         super().__init__(bus, config)
         self.subscribe(events.GetClient, self.get)
 
-    def get(self, remote_aet: str):
+    def get(self, remote_aet: str) -> 'DICOMClient':
         """Gets a DICOM client for provided AE Title
 
         :param remote_aet: remote AE title for the client
@@ -100,14 +101,14 @@ class DICOMClient:
     :ivar log: logger
     """
 
-    def __init__(self, local_ae, remote_ae):
+    def __init__(self, local_ae: str, remote_ae: dict[str, Any]):
         self.msg_id = 0
         self.local_ae = local_ae
         self.remote_ae = remote_ae
         self.aet = applicationentity.ClientAE(local_ae)
         self.log = logging.getLogger('DICOMClient')
 
-    def echo(self):
+    def echo(self) -> None:
         """Sends C-ECHO message (verification SCU)
 
         :raises CEchoError: raised when C-ECHO-RSP have a non-successfull response code
@@ -122,7 +123,8 @@ class DICOMClient:
                 self.log.error('C-ECHO failed %r', status)
                 raise CEchoError(status)
 
-    def find(self, ds: pydicom.Dataset, root=FindRoot.STUDY) -> Iterator[pydicom.Dataset]:
+    def find(self, ds: pydicom.Dataset,
+             root: FindRoot = FindRoot.STUDY) -> Iterator[pydicom.Dataset]:
         """Makes a Q/R C-FIND request
 
         :param ds: C-FIND request (search parameters)
@@ -151,7 +153,7 @@ class DICOMClient:
 
     def store(self, ds: pydicom.Dataset | str,
               sop_class_uid: uid.UID | None = None,
-              transfer_syntax: uid.UID | None = None):
+              transfer_syntax: uid.UID | None = None) -> None:
         """Send a C-STORE request with provided dataset
 
         :param ds: dataset to store (filename or dataset itself)
@@ -174,7 +176,8 @@ class DICOMClient:
             self.store_with_asce(asce, ds, sop_class_uid)
 
     def store_with_asce(self, asce: asceprovider.AssociationRequester,
-                        ds: pydicom.Dataset | str, sop_class_uid: uid.UID):
+                        ds: pydicom.Dataset | str,
+                        sop_class_uid: uid.UID) -> None:
         """Make a C-STORE request with existing association
 
         :param asce: Existing assocation
@@ -192,8 +195,8 @@ class DICOMClient:
             self.log.error('C-STORE operation failed %r', status)
             raise CStoreError(status)
 
-    def move(self, ds: pydicom.Dataset, root=MoveRoot.STUDY,
-             dest_ae: str | None = None):
+    def move(self, ds: pydicom.Dataset, root: MoveRoot = MoveRoot.STUDY,
+             dest_ae: str | None = None) -> None:
         """Makes a C-MOVE request to destination AE Title (or self, if not specified)
 
         :param ds: C-MOVE request dataset
@@ -214,7 +217,7 @@ class DICOMClient:
 
     def move_instance(self, study_uid: uid.UID, series_uid: uid.UID,
                       instance_uid: uid.UID, dest_ae: str | None = None,
-                      asce: asceprovider.AssociationRequester | None = None):
+                      asce: asceprovider.AssociationRequester | None = None) -> None:
         """Makes a C-MOVE request for a single instance to destination AE Title (or self, if not
         specified)
 
@@ -247,7 +250,7 @@ class DICOMClient:
             self._move(asce, ds, dest_ae, MoveRoot.STUDY)
 
     def _move(self, asce: asceprovider.AssociationRequester,
-              ds: pydicom.Dataset, dest_ae: str, root: MoveRoot):
+              ds: pydicom.Dataset, dest_ae: str, root: MoveRoot) -> None:
         service = asce.get_scu(root.value)
         self.msg_id += 1
         for status, response in service(ds, dest_ae, self.msg_id):

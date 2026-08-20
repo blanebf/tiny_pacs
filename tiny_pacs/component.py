@@ -75,15 +75,15 @@ class Component(trolleybus.EmitterMixin):
     def _handle_exit(self, _: None) -> None:
         self.on_exit()
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Handles `OnStart` event."""
         self.log_info(f'Component {self.name()} starting...')
 
-    def on_started(self):
+    def on_started(self) -> None:
         """Handles `OnStarted` event."""
         self.log_info(f'Component {self.name()} started')
 
-    def on_exit(self):
+    def on_exit(self) -> None:
         """Handles `OnExit` event."""
         self.log_info(f'Component {self.name()} exiting...')
 
@@ -106,7 +106,7 @@ class Component(trolleybus.EmitterMixin):
             priority = self.priority
         return self.bus.subscribe(event, callback, priority)
 
-    def log(self, level: int, msg, *args, **kwargs):
+    def log(self, level: int, msg: object, *args: object, **kwargs: Any) -> None:
         """Logger wrapper
 
         :param level: logging level
@@ -115,42 +115,42 @@ class Component(trolleybus.EmitterMixin):
         """
         self._logger.log(level, msg, *args, **kwargs)
 
-    def log_debug(self, msg, *args, **kwargs):
+    def log_debug(self, msg: object, *args: object, **kwargs: Any) -> None:
         """Log debug
 
         :param msg: logging message
         """
         self._logger.debug(msg, *args, **kwargs)
 
-    def log_info(self, msg, *args, **kwargs):
+    def log_info(self, msg: object, *args: object, **kwargs: Any) -> None:
         """Log info
 
         :param msg: logging message
         """
         self._logger.info(msg, *args, **kwargs)
 
-    def log_warning(self, msg, *args, **kwargs):
+    def log_warning(self, msg: object, *args: object, **kwargs: Any) -> None:
         """Log warning
 
         :param msg: logging message
         """
         self._logger.warning(msg, *args, **kwargs)
 
-    def log_error(self, msg, *args, **kwargs):
+    def log_error(self, msg: object, *args: object, **kwargs: Any) -> None:
         """Log error
 
         :param msg: logging message
         """
         self._logger.error(msg, *args, **kwargs)
 
-    def log_critical(self, msg, *args, **kwargs):
+    def log_critical(self, msg: object, *args: object, **kwargs: Any) -> None:
         """Log critical
 
         :param msg: logging message
         """
         self._logger.critical(msg, *args, **kwargs)
 
-    def log_exception(self, msg, *args, **kwargs):
+    def log_exception(self, msg: object, *args: object, **kwargs: Any) -> None:
         """Log exception
 
         :param msg: logging message

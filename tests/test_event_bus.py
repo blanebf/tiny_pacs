@@ -10,49 +10,53 @@ class PayloadEvent(trolleybus.Event[str, str]):
     """Test event with payload"""
 
 
+class OptionalEvent(trolleybus.Event[None, int | None]):
+    """Test event whose listeners may skip by returning None"""
+
+
 @pytest.fixture
-def bus():
+def bus() -> trolleybus.EventBus:
     return trolleybus.EventBus()
 
 
-def test_event_not_instantiable():
+def test_event_not_instantiable() -> None:
     with pytest.raises(RuntimeError):
         SimpleEvent()
 
 
-def test_empty_bus(bus: trolleybus.EventBus):
+def test_empty_bus(bus: trolleybus.EventBus) -> None:
     assert not bus.has_listeners(SimpleEvent)
     # Broadcasting an event without listeners is not an error
     assert bus.broadcast(SimpleEvent, None) == []
 
 
-def test_subscription(bus: trolleybus.EventBus):
-    def callback(_):
-        pass
+def test_subscription(bus: trolleybus.EventBus) -> None:
+    def callback(_: None) -> int:
+        return 1
 
     bus.subscribe(SimpleEvent, callback)
     assert bus.has_listeners(SimpleEvent)
 
 
-def test_unsubscribe(bus: trolleybus.EventBus):
-    def callback(_):
-        pass
+def test_unsubscribe(bus: trolleybus.EventBus) -> None:
+    def callback(_: None) -> int:
+        return 1
 
     bus.subscribe(SimpleEvent, callback)
     bus.unsubscribe(SimpleEvent, callback)
     assert not bus.has_listeners(SimpleEvent)
 
 
-def test_payload(bus: trolleybus.EventBus):
-    def callback(payload):
+def test_payload(bus: trolleybus.EventBus) -> None:
+    def callback(payload: str) -> str:
         return payload.upper()
 
     bus.subscribe(PayloadEvent, callback)
     assert bus.send_one(PayloadEvent, 'test') == 'TEST'
 
 
-def test_send_one(bus: trolleybus.EventBus):
-    def callback(_):
+def test_send_one(bus: trolleybus.EventBus) -> None:
+    def callback(_: None) -> int:
         return 1
 
     bus.subscribe(SimpleEvent, callback)
@@ -60,17 +64,17 @@ def test_send_one(bus: trolleybus.EventBus):
     assert result == 1
 
 
-def test_send_one_no_listeners(bus: trolleybus.EventBus):
+def test_send_one_no_listeners(bus: trolleybus.EventBus) -> None:
     with pytest.raises(trolleybus.NoListenersError):
         bus.send_one(SimpleEvent, None)
 
 
-def test_send_one_priority(bus: trolleybus.EventBus):
+def test_send_one_priority(bus: trolleybus.EventBus) -> None:
     """Higher priority value runs first."""
-    def callback1(_):
+    def callback1(_: None) -> int:
         return 1
 
-    def callback2(_):
+    def callback2(_: None) -> int:
         return 2
 
     bus.subscribe(SimpleEvent, callback1, 60)
@@ -80,25 +84,25 @@ def test_send_one_priority(bus: trolleybus.EventBus):
     assert result == 1
 
 
-def test_send_any(bus: trolleybus.EventBus):
-    def callback1(_):
+def test_send_any(bus: trolleybus.EventBus) -> None:
+    def callback1(_: None) -> int | None:
         return None
 
-    def callback2(_):
+    def callback2(_: None) -> int | None:
         return 1
 
-    bus.subscribe(SimpleEvent, callback1)
-    bus.subscribe(SimpleEvent, callback2)
-    result = bus.send_any(SimpleEvent, None)
+    bus.subscribe(OptionalEvent, callback1)
+    bus.subscribe(OptionalEvent, callback2)
+    result = bus.send_any(OptionalEvent, None)
 
     assert result == 1
 
 
-def test_broadcast(bus: trolleybus.EventBus):
-    def callback1(_):
+def test_broadcast(bus: trolleybus.EventBus) -> None:
+    def callback1(_: None) -> int:
         return 1
 
-    def callback2(_):
+    def callback2(_: None) -> int:
         return 2
 
     bus.subscribe(SimpleEvent, callback1)
@@ -109,12 +113,12 @@ def test_broadcast(bus: trolleybus.EventBus):
     assert 2 in results
 
 
-def test_broadcast_priorities(bus: trolleybus.EventBus):
+def test_broadcast_priorities(bus: trolleybus.EventBus) -> None:
     """Higher priority value runs first."""
-    def callback1(_):
+    def callback1(_: None) -> int:
         return 1
 
-    def callback2(_):
+    def callback2(_: None) -> int:
         return 2
 
     bus.subscribe(SimpleEvent, callback1, 60)
@@ -125,11 +129,11 @@ def test_broadcast_priorities(bus: trolleybus.EventBus):
     assert results[1] == 2
 
 
-def test_broadcast_exception(bus: trolleybus.EventBus):
-    def callback1(_):
+def test_broadcast_exception(bus: trolleybus.EventBus) -> None:
+    def callback1(_: None) -> int:
         raise ValueError()
 
-    def callback2(_):
+    def callback2(_: None) -> int:
         # Shouldn't be called
         raise AssertionError('callback2 must not be called')
 
@@ -139,11 +143,11 @@ def test_broadcast_exception(bus: trolleybus.EventBus):
         bus.broadcast(SimpleEvent, None)
 
 
-def test_broadcast_nothrow(bus: trolleybus.EventBus):
-    def callback1(_):
+def test_broadcast_nothrow(bus: trolleybus.EventBus) -> None:
+    def callback1(_: None) -> int:
         raise ValueError()
 
-    def callback2(_):
+    def callback2(_: None) -> int:
         return 1
 
     # Higher priority value runs first, so the successful listener is first
@@ -157,8 +161,8 @@ def test_broadcast_nothrow(bus: trolleybus.EventBus):
     assert isinstance(results[1].error, ValueError)
 
 
-def test_lifecycle(bus: trolleybus.EventBus):
-    fired = []
+def test_lifecycle(bus: trolleybus.EventBus) -> None:
+    fired: list[str] = []
     bus.subscribe(trolleybus.OnStart, lambda _: fired.append('start'))
     bus.subscribe(trolleybus.OnStarted, lambda _: fired.append('started'))
     bus.subscribe(trolleybus.OnExit, lambda _: fired.append('exit'))
@@ -171,8 +175,8 @@ def test_lifecycle(bus: trolleybus.EventBus):
     assert all(r.ok for r in results)
 
 
-def test_stop_nothrow(bus: trolleybus.EventBus):
-    def callback(_):
+def test_stop_nothrow(bus: trolleybus.EventBus) -> None:
+    def callback(_: None) -> None:
         raise ValueError()
 
     bus.subscribe(trolleybus.OnExit, callback)

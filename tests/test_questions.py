@@ -3,18 +3,18 @@ from tiny_pacs.interactive import AEQuestionnaire
 from tiny_pacs.questions import Question
 
 
-def test_value_default():
+def test_value_default() -> None:
     question = Question('port', 'port', int, default=11112)
     assert question.value == 11112
 
 
-def test_value_set():
+def test_value_set() -> None:
     question = Question('port', 'port', int, default=11112)
     question.value = '104'
     assert question.value == 104
 
 
-def test_empty_value_keeps_default():
+def test_empty_value_keeps_default() -> None:
     question = Question('port', 'port', int, default=11112)
     question.value = ''
     assert question.value == 11112
@@ -22,7 +22,7 @@ def test_empty_value_keeps_default():
     assert question.value == 11112
 
 
-def test_falsy_value_accepted():
+def test_falsy_value_accepted() -> None:
     question = Question('port', 'port', int, default=11112)
     question.value = 0
     assert question.value == 0
@@ -32,7 +32,7 @@ def test_falsy_value_accepted():
     assert toggle.value is False
 
 
-def test_repeatable_appends():
+def test_repeatable_appends() -> None:
     question = Question('ae_title', 'aet', lambda v: v, True, ['TINY_PACS'])
     question.value = 'FIRST'
     question.value = 'SECOND'
@@ -40,12 +40,12 @@ def test_repeatable_appends():
     assert isinstance(question._value, list)
 
 
-def test_repeatable_default():
+def test_repeatable_default() -> None:
     question = Question('ae_title', 'aet', lambda v: v, True, ['TINY_PACS'])
     assert question.value == ['TINY_PACS']
 
 
-def test_ae_questionnaire_interactive_flow():
+def test_ae_questionnaire_interactive_flow() -> None:
     questionnaire = AEQuestionnaire()
     ae_title, port, max_pdu, dump_ds = questionnaire.questions
     ae_title.value = 'AET1'
@@ -61,7 +61,7 @@ def test_ae_questionnaire_interactive_flow():
     }
 
 
-def test_db_questionnaire_password():
+def test_db_questionnaire_password() -> None:
     questionnaire = DBQuestionnaire()
     questionnaire.db_driver.value = 'postgres'
     questionnaire.postgres_db_name.value = 'tiny_pacs_db'

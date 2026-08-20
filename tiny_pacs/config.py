@@ -15,13 +15,13 @@ ConfigInput: TypeAlias = str | list[str] | IO[bytes] | dict[str, Any]
 class Config(dict):
     """Config reader for Tiny PACS."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self['components'] = {}
         self['ae'] = DEFAULT_AE_CONFIG.copy()
         self['log'] = DEFAULT_LOG_CONF.copy()
 
-    def update_config(self, _config: ConfigInput):
+    def update_config(self, _config: ConfigInput) -> None:
         """Read configuration or
 
         :param _config: configuration to read.
@@ -82,12 +82,12 @@ class Config(dict):
         return cast(dict, self['components'])
 
     @staticmethod
-    def _read_yaml(file_name: str):
+    def _read_yaml(file_name: str) -> Any:
         with open(file_name) as fp:
             return yaml.safe_load(fp)
 
     @staticmethod
-    def _read_json(file_name: str):
+    def _read_json(file_name: str) -> Any:
         with open(file_name) as fp:
             return json.load(fp)
 

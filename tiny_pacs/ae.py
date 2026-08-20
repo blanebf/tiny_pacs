@@ -156,7 +156,7 @@ class AE(applicationentity.AE):
         )
 
     def on_association_request(self, asce: asceprovider.AssociationAcceptor,
-                               assoc):
+                               assoc: pdu.AAssociateRqPDU) -> None:
         called_ae_title = assoc.called_ae_title.strip()
         calling_ae_title = assoc.calling_ae_title.strip()
         if called_ae_title not in self.valid_aet:

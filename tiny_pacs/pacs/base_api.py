@@ -1,10 +1,18 @@
 import logging
-from typing import Any, TypeAlias
+from collections.abc import Iterator
+from typing import Any, Protocol, TypeAlias, TypeVar
 
 import peewee
 import pydicom
 import trolleybus
 from pydicom.tag import BaseTag
+
+TM = TypeVar('TM', bound=peewee.Model)
+
+#: Model with a DICOM tag to ``(attribute name, VR)`` mapping, used for
+#: building C-FIND queries
+class MappedModel(Protocol):
+    mapping: dict[int, tuple[str, str]]
 
 #: Set of joins between models for a C-FIND query
 JoinsSet: TypeAlias = set[tuple[type[peewee.Model], type[peewee.Model]]]
@@ -47,14 +55,17 @@ TEXT_VR = ['AE', 'CS', 'LO', 'LT', 'PN', 'SH', 'ST', 'UC', 'UR', 'UT', 'UI']
 
 class BaseAPI:
     @classmethod
-    def name(cls):
+    def name(cls) -> str:
         return cls.__name__
 
     def __init__(self, bus: trolleybus.EventBus):
         self.bus = bus
         self.log = logging.getLogger(self.name())
 
-    def build_filters(self, model, query, ds: pydicom.Dataset, skipped=None):
+    def build_filters(self, model: MappedModel, query: 'peewee.ModelSelect[TM]',
+                      ds: pydicom.Dataset,
+                      skipped: SkippedTags | None = None
+                      ) -> tuple['peewee.ModelSelect[TM]', ResponseAttrs]:
         """Build filters for provided model
 
         :param model: PACS level model
@@ -70,7 +81,7 @@ class BaseAPI:
         """
         if skipped is None:
             skipped = set()
-        response_attrs = []
+        response_attrs: ResponseAttrs = []
         for elem in ds:
             if elem.tag in EXCLUDED_ATTRS or elem.tag in skipped:
                 continue
@@ -90,7 +101,8 @@ class BaseAPI:
         return query, response_attrs
 
 
-    def build_filter(self, query, attr, vr, elem):
+    def build_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
+                     vr: str, elem: pydicom.DataElement) -> 'peewee.ModelSelect[TM]':
         """Build filter for specific attribute
 
         :param query: current SQL query
@@ -120,7 +132,8 @@ class BaseAPI:
         raise ValueError(f'Unsupported VR: {vr}')
 
 
-    def filter_upper_level(self, model, elements: list):
+    def filter_upper_level(self, model: MappedModel,
+                           elements: list[pydicom.DataElement]) -> Iterator[tuple[Any, ...]]:
         """Build filter for upper C-FIND level
 
         :param model: peewee model
@@ -136,7 +149,8 @@ class BaseAPI:
             yield elem.tag, attr, vr, elem, attr_name
 
 
-    def encode_response(self, instance, response_attrs: list, encoding: str):
+    def encode_response(self, instance: peewee.Model, response_attrs: ResponseAttrs,
+                        encoding: str) -> pydicom.Dataset:
         """Creates a C-FIND response dataset
 
         :param instance: database model instance
@@ -167,7 +181,8 @@ class BaseAPI:
                 rsp.add_new(tag, vr, attr)
         return rsp
 
-    def _text_filter(self, query: peewee.Query, attr, value: str):
+    def _text_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
+                     value: str | list[str]) -> 'peewee.ModelSelect[TM]':
         if isinstance(value, list):
             return query.where(attr << value)
         value = value.replace('?', '_')
@@ -175,7 +190,8 @@ class BaseAPI:
         return query.where(attr ** value)
 
 
-    def _date_filter(self, query: peewee.Query, attr, value: str):
+    def _date_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
+                     value: str) -> 'peewee.ModelSelect[TM]':
         if '-' in value:
             start, end = value.split('-')
             # TODO: Add normalization for shorter value
@@ -184,7 +200,8 @@ class BaseAPI:
         return query.where(attr == value)
 
 
-    def _time_filter(self, query: peewee.Query, attr, value: str):
+    def _time_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
+                     value: str) -> 'peewee.ModelSelect[TM]':
         if '-' in value:
             start, end = value.split('-')
             # TODO: Add normalization for shorter value
@@ -193,7 +210,8 @@ class BaseAPI:
         return query.where(attr == value)
 
 
-    def _date_time_filter(self, query: peewee.Query, attr, value: str):
+    def _date_time_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
+                          value: str) -> 'peewee.ModelSelect[TM]':
         if '-' in value:
             start, end = value.split('-')
             # TODO: Add normalization for shorter value

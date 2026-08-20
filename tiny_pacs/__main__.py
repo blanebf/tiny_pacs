@@ -3,7 +3,7 @@ import argparse
 from . import config, interactive, server
 
 
-def main():
+def main() -> None:
     args = parse_args()
     pacs_conf = config.Config()
     pacs_conf.update_config(args.config)
@@ -21,7 +21,7 @@ def main():
     srv.start_with_block()
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', default=[], nargs='*',
                         help='Tiny PACS configuration')

@@ -3,8 +3,8 @@ from typing import Any
 
 
 class Question:
-    def __init__(self, key, prompt: str, handler: Callable[[Any], Any],
-                 repeatable=False, default: Any = None,
+    def __init__(self, key: str, prompt: str, handler: Callable[[Any], Any],
+                 repeatable: bool = False, default: Any = None,
                  default_repr: str | None = None):
         self.key = key
         self.prompt = prompt
@@ -12,6 +12,7 @@ class Question:
         self.repeatable = repeatable
         self.default = default
         self.default_repr = default_repr
+        self._value: Any
         if repeatable:
             self._value = []
         else:
@@ -26,7 +27,10 @@ class Question:
         return self.handler(self._value)
 
     @value.setter
-    def value(self, _value: Any):
+    def value(self, _value: Any) -> None:
+        self._set_value(_value)
+
+    def _set_value(self, _value: Any) -> None:
         if _value is None or _value == '':
             return
 
@@ -37,6 +41,9 @@ class Question:
 
 
 class Questionnaire:
+    #: Configuration section name the questionnaire values belong to
+    key: str
+
     def __init__(self, questions: list[Question]):
         self.questions = questions
 

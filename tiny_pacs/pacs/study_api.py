@@ -8,7 +8,7 @@ from .. import events
 from . import base_api, models
 
 
-def _dedup_multivalue(value):
+def _dedup_multivalue(value: str | None) -> str | None:
     if not value:
         return value
     return '\\'.join(set(value.split('\\')))

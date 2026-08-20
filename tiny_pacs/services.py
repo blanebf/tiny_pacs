@@ -31,7 +31,7 @@ def _send_ops_response(asce: asceprovider.AssociationAcceptor,
                        msg: dimsemessages.CMoveRQMessage | dimsemessages.CGetRQMessage,
                        _status: statuses.Status,
                        nop: int, failed: int, warning: int,
-                       completed: int):
+                       completed: int) -> None:
     """Builds and sends a fresh C-MOVE/C-GET response.
 
     A new response message is created for every send: DIMSE messages are
@@ -64,7 +64,7 @@ def _final_status(failed: int, warning: int) -> statuses.Status:
 @sopclass.sop_classes(sopclass.MOVE_SOP_CLASSES)
 def qr_move_scp(asce: asceprovider.AssociationAcceptor,
                 ctx: fsm.PContextDef,
-                msg: dimsemessages.CMoveRQMessage):
+                msg: dimsemessages.CMoveRQMessage) -> None:
     """Query/Retrieve C-MOVE service implementation.
 
     :param asce: active association
@@ -141,7 +141,7 @@ def qr_move_scp(asce: asceprovider.AssociationAcceptor,
 
 @sopclass.sop_classes(sopclass.GET_SOP_CLASSES)
 def qr_get_scp(asce: asceprovider.AssociationAcceptor,
-               ctx: fsm.PContextDef, msg: dimsemessages.CGetRQMessage):
+               ctx: fsm.PContextDef, msg: dimsemessages.CGetRQMessage) -> None:
     """Query/Retrieve C-GET service implementation.
 
     :param asce: active association

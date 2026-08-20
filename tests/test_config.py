@@ -1,7 +1,9 @@
+import pathlib
+
 from tiny_pacs import config, db, server, storage
 
 
-def test_yaml_unquoted_on_key(tmp_path):
+def test_yaml_unquoted_on_key(tmp_path: pathlib.Path) -> None:
     # PyYAML (YAML 1.1) parses the bare ``on`` key as boolean ``True``,
     # producing ``{True: True}`` — components must still be enabled.
     conf_file = tmp_path / 'config.yaml'

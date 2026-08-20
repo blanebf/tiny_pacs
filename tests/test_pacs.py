@@ -11,7 +11,7 @@ from tiny_pacs.pacs import models
 
 
 @pytest.fixture
-def pacs_srv():
+def pacs_srv() -> pacs.PACS:
     bus = trolleybus.EventBus()
     _db = db.Database(bus, {'db_name': str(uuid.uuid4())})
     _pacs_srv = pacs.PACS(bus, {})
@@ -85,7 +85,7 @@ def pacs_srv():
     return _pacs_srv
 
 
-def test_patient_find_no_filters(pacs_srv: pacs.PACS):
+def test_patient_find_no_filters(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -96,7 +96,7 @@ def test_patient_find_no_filters(pacs_srv: pacs.PACS):
         assert patient.PatientSex == 'M'
 
 
-def test_patient_find_with_count(pacs_srv: pacs.PACS):
+def test_patient_find_with_count(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -109,7 +109,7 @@ def test_patient_find_with_count(pacs_srv: pacs.PACS):
         assert patient.NumberOfPatientRelatedStudies == 2
 
 
-def test_patient_find_text_filter_positive(pacs_srv: pacs.PACS):
+def test_patient_find_text_filter_positive(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientSex = None
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -120,7 +120,7 @@ def test_patient_find_text_filter_positive(pacs_srv: pacs.PACS):
         assert patient.PatientSex == 'M'
 
 
-def test_patient_find_text_filter_negative(pacs_srv: pacs.PACS):
+def test_patient_find_text_filter_negative(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientSex = None
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -129,7 +129,7 @@ def test_patient_find_text_filter_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_patient_find_date_single_positive(pacs_srv: pacs.PACS):
+def test_patient_find_date_single_positive(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -141,7 +141,7 @@ def test_patient_find_date_single_positive(pacs_srv: pacs.PACS):
         assert patient.PatientSex == 'M'
 
 
-def test_patient_find_date_single_negative(pacs_srv: pacs.PACS):
+def test_patient_find_date_single_negative(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -151,7 +151,7 @@ def test_patient_find_date_single_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_patient_find_date_range_positive(pacs_srv: pacs.PACS):
+def test_patient_find_date_range_positive(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -163,7 +163,7 @@ def test_patient_find_date_range_positive(pacs_srv: pacs.PACS):
         assert patient.PatientSex == 'M'
 
 
-def test_patient_find_date_range_negative(pacs_srv: pacs.PACS):
+def test_patient_find_date_range_negative(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -173,7 +173,7 @@ def test_patient_find_date_range_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_study_find_no_patient_attrs(pacs_srv: pacs.PACS):
+def test_study_find_no_patient_attrs(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.SpecificCharacterSet = 'ISO_IR 192'
     request.QueryRetrieveLevel = 'STUDY'
@@ -183,7 +183,7 @@ def test_study_find_no_patient_attrs(pacs_srv: pacs.PACS):
     assert results[0].AccessionNumber == '1234'
 
 
-def test_study_find_patient_attrs_no_filters(pacs_srv: pacs.PACS):
+def test_study_find_patient_attrs_no_filters(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = None
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -195,7 +195,7 @@ def test_study_find_patient_attrs_no_filters(pacs_srv: pacs.PACS):
     assert results[0].PatientName == 'Test^Test^Test'
 
 
-def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS):
+def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = 'Test^*'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -207,7 +207,7 @@ def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS):
     assert results[0].PatientName == 'Test^Test^Test'
 
 
-def test_study_find_patient_attrs_with_filters_negative(pacs_srv: pacs.PACS):
+def test_study_find_patient_attrs_with_filters_negative(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = 'Test1^*'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -216,7 +216,7 @@ def test_study_find_patient_attrs_with_filters_negative(pacs_srv: pacs.PACS):
     assert not list(pacs_srv.c_find(request))
 
 
-def test_study_find_modalities_in_study_no_filter(pacs_srv: pacs.PACS):
+def test_study_find_modalities_in_study_no_filter(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.SpecificCharacterSet = 'ISO_IR 192'
     request.QueryRetrieveLevel = 'STUDY'
@@ -227,7 +227,7 @@ def test_study_find_modalities_in_study_no_filter(pacs_srv: pacs.PACS):
     assert set(results[0].ModalitiesInStudy) == set(['DX', 'SR'])
 
 
-def test_series_find_patient_filter(pacs_srv: pacs.PACS):
+def test_series_find_patient_filter(pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = 'Test^*'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -238,7 +238,7 @@ def test_series_find_patient_filter(pacs_srv: pacs.PACS):
     assert len(results) == 4
 
 
-def test_store(pacs_srv: pacs.PACS):
+def test_store(pacs_srv: pacs.PACS) -> None:
     ds = Dataset()
     ds.SpecificCharacterSet = 'ISO_IR 192'
     ds.PatientID = 'test_id'
@@ -266,10 +266,10 @@ def test_store(pacs_srv: pacs.PACS):
     assert len(results) == 1
 
 
-def test_store_unreadable_dataset(pacs_srv: pacs.PACS):
+def test_store_unreadable_dataset(pacs_srv: pacs.PACS) -> None:
     # A dataset that cannot be parsed must yield CANNOT_UNDERSTAND instead
     # of crashing on an unbound local in the failure handler.
-    ctx = fsm.PContextDef(1, '2.3.4', uid.ImplicitVRLittleEndian)
+    ctx = fsm.PContextDef(1, uid.UID('2.3.4'), uid.ImplicitVRLittleEndian)
     payload = events.StorePayload(ctx, io.BytesIO(b'not a dicom file'))
     status = pacs_srv.on_store(payload)
     assert status == statuses.C_STORE_CANNOT_UNDERSTAND

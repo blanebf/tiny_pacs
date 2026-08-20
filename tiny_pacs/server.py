@@ -32,10 +32,10 @@ class Server:
         self.config = _config
         logging.config.dictConfig(self.config.log)
         self.bus = trolleybus.EventBus()
-        self.ae = None
+        self.ae: ae.AE | None = None
         self.components = list(self.initialize_components())
 
-    def start(self):
+    def start(self) -> None:
         """Starts the server.
 
         Emits `OnStart` and `OnStarted` events via
@@ -47,7 +47,7 @@ class Server:
         # manager starts the serving thread.
         self.ae.__enter__()
 
-    def start_with_block(self):
+    def start_with_block(self) -> None:
         """Starts the server and blocks current thread."""
         self.start()
         try:
@@ -60,7 +60,7 @@ class Server:
         finally:
             self.exit()
 
-    def exit(self):
+    def exit(self) -> None:
         """Handles server exit.
 
         Emits `OnExit` event via :meth:`trolleybus.EventBus.stop` (listener

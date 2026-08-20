@@ -30,7 +30,7 @@ jobs:
         run: poetry run ruff check .
 
       - name: Type check (mypy)
-        run: poetry run mypy tiny_pacs
+        run: poetry run mypy tiny_pacs tests
 
       - name: Tests
         run: poetry run pytest

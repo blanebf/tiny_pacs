@@ -1,7 +1,7 @@
 import enum
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from itertools import chain
-from typing import Any
+from typing import Any, cast
 
 import peewee
 import trolleybus
@@ -41,10 +41,10 @@ class Database(component.Component):
         self.db: peewee.Database | None = None
 
     @classmethod
-    def interactive(cls):
+    def interactive(cls) -> 'DBQuestionnaire':
         return DBQuestionnaire()
 
-    def on_start(self):
+    def on_start(self) -> None:
         """Handles start event.
 
         Initializes database and creates tables
@@ -64,14 +64,14 @@ class Database(component.Component):
             raise ValueError('Unsupported DB driver')
 
         # Request all available tables
-        tables = self.broadcast(events.Tables, None)
-        tables = list(chain.from_iterable(tables))
+        component_tables = self.broadcast(events.Tables, None)
+        tables = list(chain.from_iterable(component_tables))
 
         # Binds all tables to Database instance
         self.db.bind(tables)
         self._create_tables(tables)
 
-    def atomic(self, _: None = None):
+    def atomic(self, _: None = None) -> Any:
         """Create an atomic transaction
 
         :return: atomic transaction
@@ -87,7 +87,7 @@ class Database(component.Component):
             return peewee.fn.string_agg
         raise ValueError(f'Unexpected DB object {self.db}')
 
-    def _init_sqlite(self):
+    def _init_sqlite(self) -> peewee.SqliteDatabase:
         """Initializes SQLite database."""
         db_name = self.config.get('db_name', 'pacs.db')
         uri = self.config.get('uri', True)
@@ -96,9 +96,12 @@ class Database(component.Component):
         if uri:
             db_name = f'file:{db_name}?mode={mode}&cache=shared'
         self.log_info('Initialized SQLite database %s', db_name)
-        return pool.PooledSqliteDatabase(db_name, uri=uri, max_connections=max_conn)
+        return cast(
+            peewee.SqliteDatabase,
+            pool.PooledSqliteDatabase(db_name, uri=uri, max_connections=max_conn)
+        )
 
-    def _init_postgres(self):
+    def _init_postgres(self) -> peewee.PostgresqlDatabase:
         """Initializes PostgreSQL database."""
         db_name = self.config.get('db_name', 'tiny_pacs_db')
         host = self.config.get('host', 'localhost')
@@ -110,19 +113,22 @@ class Database(component.Component):
             'Initializing PostgreSQL database with parameters: %s, %d %s',
             host, port, user
         )
-        return pool.PooledPostgresqlDatabase(
-            db_name, host=host, port=port, user=user, password=password,
-            max_connections=max_conn
+        return cast(
+            peewee.PostgresqlDatabase,
+            pool.PooledPostgresqlDatabase(
+                db_name, host=host, port=port, user=user, password=password,
+                max_connections=max_conn
+            )
         )
 
-    def _create_tables(self, tables: list):
+    def _create_tables(self, tables: list[type[peewee.Model]]) -> None:
         self.log_debug('Creating %d table', len(tables))
         for table in tables:
             table.create_table(safe=True)
 
 
-class DBQuestionnaire:
-    def __init__(self):
+class DBQuestionnaire(questions.Questionnaire):
+    def __init__(self) -> None:
         self.db_driver = questions.Question(
             'driver',
             'Enter DB driver type (sqlite, postgres)',
@@ -152,8 +158,13 @@ class DBQuestionnaire:
             'password', 'Enter PostgreSQL password',
             lambda v: v, default='postgres'
         )
+        super().__init__([
+            self.db_driver, self.sqlite_db_name, self.postgres_db_name,
+            self.postgres_db_host, self.postgres_port, self.postgres_user,
+            self.postgres_password
+        ])
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[questions.Question]:
         yield self.db_driver
         if self.db_driver.value == 'sqlite':
             yield self.sqlite_db_name
@@ -166,7 +177,7 @@ class DBQuestionnaire:
         else:
             raise ValueError(f'Unsupported DB driver {self.db_driver.value}')
 
-    def value(self):
+    def value(self) -> dict[str, Any]:
         if self.db_driver.value == 'sqlite':
             return {
                 'db_name': self.sqlite_db_name.value

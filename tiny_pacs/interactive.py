@@ -8,7 +8,7 @@ from .questions import Question, Questionnaire
 class AEQuestionnaire(Questionnaire):
     key = 'ae'
 
-    def __init__(self):
+    def __init__(self) -> None:
         questions = [
             Question(
                 'ae_title', 'Enter AE Titles for your service',
@@ -30,13 +30,13 @@ class AEQuestionnaire(Questionnaire):
         super().__init__(questions)
 
 
-class LogginQuestionnaire:
+class LogginQuestionnaire(Questionnaire):
     key = 'log'
     stream_handler = 'logging.StreamHandler'
     rotating_handler = 'logging.handlers.RotatingFileHandler'
     file_handler = 'logging.FileHandler'
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logging_handler = Question(
             'logging_handler',
             'Select logging handler: StreamHandler(1), FileHandler(2), RotatingFileHandler(3)',
@@ -62,6 +62,10 @@ class LogginQuestionnaire:
             'Enter backup count',
             int, False, f'{10}'
         )
+        super().__init__([
+            self.logging_handler, self.logging_level, self.log_file,
+            self.log_file_size, self.log_backup_count
+        ])
 
     def __iter__(self) -> Iterator[Question]:
         yield self.logging_handler
@@ -131,17 +135,17 @@ class LogginQuestionnaire:
         raise ValueError('Unsupported logging level')
 
 
-class ComponentsQuestionnaire:
+class ComponentsQuestionnaire(Questionnaire):
     key = 'components'
 
-    def __init__(self):
-        self.questions = (
+    def __init__(self) -> None:
+        super().__init__([
             Question(k, f'Use component {k}?',
                      lambda v: v.lower() == 'y',
                      default='N')
             for k in config.COMPONENT_REGISTRY.keys()
-        )
-        self._value = {}
+        ])
+        self._value: dict[str, Any] = {}
 
     def __iter__(self) -> Iterator[Question]:
         for question in self.questions:
@@ -156,12 +160,12 @@ class ComponentsQuestionnaire:
             component_config.update(questionnaire.value())
             self._value[question.key] = component_config
 
-    def value(self):
+    def value(self) -> dict[str, Any]:
         return self._value
 
 
 class InteractiveFront:
-    def __init__(self):
+    def __init__(self) -> None:
         self.questionnairies = [
             AEQuestionnaire(),
             LogginQuestionnaire(),
@@ -180,8 +184,8 @@ class InteractiveFront:
             lambda v: v
         )
 
-    def run(self):
-        _config = {}
+    def run(self) -> tuple[dict[str, Any], bool]:
+        _config: dict[str, Any] = {}
         for questionnaire in self.questionnairies:
             for question in questionnaire:
                 if question.repeatable:

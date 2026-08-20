@@ -3,11 +3,13 @@
 A self-signed certificate is generated with the ``openssl`` binary; the tests
 are skipped when it is not available.
 """
+import pathlib
 import shutil
 import socket
 import ssl
 import subprocess
 import uuid
+from collections.abc import Iterator
 
 import pytest
 from pynetdicom2 import asceprovider, sopclass, ssl_ae, uids
@@ -21,7 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(scope='module')
-def tls_cert(tmp_path_factory):
+def tls_cert(tmp_path_factory: pytest.TempPathFactory) -> tuple[pathlib.Path, pathlib.Path]:
     tmp = tmp_path_factory.mktemp('tls')
     cert = tmp / 'cert.pem'
     key = tmp / 'key.pem'
@@ -35,7 +37,7 @@ def tls_cert(tmp_path_factory):
 
 
 @pytest.fixture
-def tls_pacs(tls_cert):
+def tls_pacs(tls_cert: tuple[pathlib.Path, pathlib.Path]) -> Iterator[server.Server]:
     cert, key = tls_cert
     conf = config.Config()
     conf.update_config({
@@ -51,7 +53,7 @@ def tls_pacs(tls_cert):
     _pacs.exit()
 
 
-def _tls_echo(port: int, cert) -> bool:
+def _tls_echo(port: int, cert: pathlib.Path) -> bool:
     client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     client_ctx.check_hostname = False
     client_ctx.verify_mode = ssl.CERT_REQUIRED
@@ -65,19 +67,23 @@ def _tls_echo(port: int, cert) -> bool:
     with client_ae.request_association(remote) as assoc:
         service = assoc.get_scu(uids.VERIFICATION_SOP_CLASS)
         status = service(1)
-    return status.is_success
+    return bool(status.is_success)
 
 
-def test_tls_echo(tls_pacs: server.Server, tls_cert):
+def test_tls_echo(tls_pacs: server.Server,
+                  tls_cert: tuple[pathlib.Path, pathlib.Path]) -> None:
     cert, _ = tls_cert
+    assert tls_pacs.ae is not None
     port = tls_pacs.ae.server.server_address[1]
     assert tls_pacs.ae.ssl_context is not None
     assert _tls_echo(port, cert)
 
 
 def test_tls_failed_handshake_does_not_block_server(tls_pacs: server.Server,
-                                                    tls_cert):
+                                                    tls_cert: tuple[pathlib.Path,
+                                                                    pathlib.Path]) -> None:
     cert, _ = tls_cert
+    assert tls_pacs.ae is not None
     port = tls_pacs.ae.server.server_address[1]
     # A client that opens the TCP connection but never completes the TLS
     # handshake must not prevent the server from accepting new connections.

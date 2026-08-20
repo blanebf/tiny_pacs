@@ -1,3 +1,5 @@
+from typing import Any
+
 import trolleybus
 
 from . import component, events, questions
@@ -6,16 +8,16 @@ from . import component, events, questions
 class Devices(component.Component):
     def __init__(self, bus: trolleybus.EventBus, config: dict):
         super().__init__(bus, config)
-        self.devices = config.get('devices', {})
-        self.auto_add = config.get('auto_add', True)
-        self.default_port = config.get('default_port', 11112)
+        self.devices: dict[str, dict[str, Any]] = config.get('devices', {})
+        self.auto_add: bool = config.get('auto_add', True)
+        self.default_port: int = config.get('default_port', 11112)
         if self.auto_add:
             self.subscribe(events.Assoc, self.add_device_from_asce)
         self.subscribe(events.DeviceByAE, self.device_by_ae)
 
     @classmethod
-    def interactive(cls):
-        def add_device(value: str):
+    def interactive(cls) -> questions.Questionnaire:
+        def add_device(value: str) -> dict[str, Any]:
             aet, address, port = value.split()
             return {'aet': aet, 'address': address, 'port': int(port)}
 
@@ -35,10 +37,10 @@ class Devices(component.Component):
             )
         ])
 
-    def device_by_ae(self, _ae: str):
+    def device_by_ae(self, _ae: str) -> dict[str, Any] | None:
         return self.devices.get(_ae)
 
-    def add_device_from_asce(self, payload: events.AssocPayload):
+    def add_device_from_asce(self, payload: events.AssocPayload) -> None:
         # TODO add C-ECHO, to check availability
         asce = payload.asce
         assoc = payload.assoc
@@ -62,12 +64,12 @@ class Devices(component.Component):
 
 class DeviceQuestion(questions.Question):
     @property
-    def value(self):
+    def value(self) -> dict[str, Any]:
         if not self._value:
             return {}
         devices = (self.handler(v) for v in self._value)
         return {d['aet']: d for d in devices}
 
     @value.setter
-    def value(self, _value):
-        questions.Question.value.fset(self, _value)
+    def value(self, _value: Any) -> None:
+        self._set_value(_value)
