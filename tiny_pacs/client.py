@@ -91,8 +91,11 @@ class Client(component.Component[ClientConfig]):
 
     config_model = ClientConfig
 
-    def __init__(self, bus: trolleybus.EventBus,
-                 config: ClientConfig | dict[str, Any]):
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: ClientConfig | dict[str, Any]
+    ) -> None:
         """Component initialization.
 
         Subscribes to :class:`~tiny_pacs.events.GetClient`.
@@ -136,8 +139,11 @@ class DICOMClient:
     :ivar log: logger
     """
 
-    def __init__(self, local_ae: str,
-                 remote_ae: devices.DeviceConfig | dict[str, Any]):
+    def __init__(
+            self,
+            local_ae: str,
+            remote_ae: devices.DeviceConfig | dict[str, Any]
+    ) -> None:
         """Initializes the client.
 
         :param local_ae: local AE Title
@@ -180,8 +186,11 @@ class DICOMClient:
                 self.log.error('C-ECHO failed %r', status)
                 raise CEchoError(status)
 
-    def find(self, ds: pydicom.Dataset,
-             root: FindRoot = FindRoot.STUDY) -> Iterator[pydicom.Dataset]:
+    def find(
+            self,
+            ds: pydicom.Dataset,
+            root: FindRoot = FindRoot.STUDY
+    ) -> Iterator[pydicom.Dataset]:
         """Makes a Q/R C-FIND request
 
         :param ds: C-FIND request (search parameters)
@@ -209,9 +218,12 @@ class DICOMClient:
 
                 yield result
 
-    def store(self, ds: pydicom.Dataset | str,
-              sop_class_uid: uid.UID | None = None,
-              transfer_syntax: uid.UID | None = None) -> None:
+    def store(
+            self,
+            ds: pydicom.Dataset | str,
+            sop_class_uid: uid.UID | None = None,
+            transfer_syntax: uid.UID | None = None
+    ) -> None:
         """Send a C-STORE request with provided dataset
 
         :param ds: dataset to store (filename or dataset itself)
@@ -233,9 +245,12 @@ class DICOMClient:
             self.log.debug('Association established with %r', self.remote_ae)
             self.store_with_asce(asce, ds, sop_class_uid)
 
-    def store_with_asce(self, asce: asceprovider.AssociationRequester,
-                        ds: pydicom.Dataset | str,
-                        sop_class_uid: uid.UID) -> None:
+    def store_with_asce(
+            self,
+            asce: asceprovider.AssociationRequester,
+            ds: pydicom.Dataset | str,
+            sop_class_uid: uid.UID
+    ) -> None:
         """Make a C-STORE request with existing association
 
         :param asce: existing association
@@ -253,8 +268,12 @@ class DICOMClient:
             self.log.error('C-STORE operation failed %r', status)
             raise CStoreError(status)
 
-    def move(self, ds: pydicom.Dataset, root: MoveRoot = MoveRoot.STUDY,
-             dest_ae: str | None = None) -> None:
+    def move(
+            self,
+            ds: pydicom.Dataset,
+            root: MoveRoot = MoveRoot.STUDY,
+            dest_ae: str | None = None
+    ) -> None:
         """Makes a C-MOVE request to destination AE Title (or self, if not
         specified)
 
@@ -276,8 +295,11 @@ class DICOMClient:
             self._move(asce, ds, dest_ae, root)
 
     def move_instance(
-            self, study_uid: uid.UID, series_uid: uid.UID,
-            instance_uid: uid.UID, dest_ae: str | None = None,
+            self,
+            study_uid: uid.UID,
+            series_uid: uid.UID,
+            instance_uid: uid.UID,
+            dest_ae: str | None = None,
             asce: asceprovider.AssociationRequester | None = None
     ) -> None:
         """Makes a C-MOVE request for a single instance to destination

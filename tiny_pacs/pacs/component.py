@@ -71,8 +71,11 @@ class PACS(component.Component[PACSConfig]):
 
     config_model = PACSConfig
 
-    def __init__(self, bus: trolleybus.EventBus,
-                 config: PACSConfig | dict[str, Any]):
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: PACSConfig | dict[str, Any]
+    ) -> None:
         """Component initialization
 
         :param bus: event bus
@@ -134,8 +137,10 @@ class PACS(component.Component[PACSConfig]):
             self.broadcast(events.StoreDone, ds)
             return statuses.SUCCESS
 
-    def on_find(self, payload: events.FindPayload
-                ) -> Iterator[tuple[pydicom.Dataset, statuses.Status]]:
+    def on_find(
+            self,
+            payload: events.FindPayload
+    ) -> Iterator[tuple[pydicom.Dataset, statuses.Status]]:
         """Handling of incoming find request
 
         :param payload: presentation context and incoming dataset
@@ -185,8 +190,10 @@ class PACS(component.Component[PACSConfig]):
         results = self.broadcast(events.GetFiles, instances)
         return list(chain.from_iterable(results))
 
-    def on_commitment(self, uids: list[tuple[UID, UID]]
-                      ) -> tuple[list[tuple[UID, UID]], list[tuple[UID, UID]]]:
+    def on_commitment(
+            self,
+            uids: list[tuple[UID, UID]]
+    ) -> tuple[list[tuple[UID, UID]], list[tuple[UID, UID]]]:
         """Handling of incoming storage commitment request
 
         :param uids: list of tuple (SOP Class UID, SOP Instance UID)
@@ -236,8 +243,10 @@ class PACS(component.Component[PACSConfig]):
             series = self.series_api.c_store(study, ds)
             self.instance_api.c_store(series, ds)
 
-    def c_move_get_instances(self, ds: pydicom.Dataset
-                             ) -> Iterator[tuple[str, str, str]]:
+    def c_move_get_instances(
+            self,
+            ds: pydicom.Dataset
+    ) -> Iterator[tuple[str, str, str]]:
         """Gets instances for C-MOVE request
 
         :param ds: incoming dataset

@@ -26,13 +26,16 @@ if TYPE_CHECKING:
     from . import ae
 
 
-def _send_ops_response(asce: asceprovider.AssociationAcceptor,
-                       ctx: fsm.PContextDef,
-                       msg: dimsemessages.CMoveRQMessage
-                       | dimsemessages.CGetRQMessage,
-                       _status: statuses.Status,
-                       nop: int, failed: int, warning: int,
-                       completed: int) -> None:
+def _send_ops_response(
+        asce: asceprovider.AssociationAcceptor,
+        ctx: fsm.PContextDef,
+        msg: dimsemessages.CMoveRQMessage | dimsemessages.CGetRQMessage,
+        _status: statuses.Status,
+        nop: int,
+        failed: int,
+        warning: int,
+        completed: int
+) -> None:
     """Builds and sends a fresh C-MOVE/C-GET response.
 
     A new response message is created for every send: DIMSE messages are
@@ -63,9 +66,11 @@ def _final_status(failed: int, warning: int) -> statuses.Status:
 
 
 @sopclass.sop_classes(sopclass.MOVE_SOP_CLASSES)
-def qr_move_scp(asce: asceprovider.AssociationAcceptor,
-                ctx: fsm.PContextDef,
-                msg: dimsemessages.CMoveRQMessage) -> None:
+def qr_move_scp(
+        asce: asceprovider.AssociationAcceptor,
+        ctx: fsm.PContextDef,
+        msg: dimsemessages.CMoveRQMessage
+) -> None:
     """Query/Retrieve C-MOVE service implementation.
 
     :param asce: active association
@@ -83,9 +88,11 @@ def qr_move_scp(asce: asceprovider.AssociationAcceptor,
                            0, 0, 0, 0)
         return
 
-    ds = dsutils.decode(cast(bytes, msg.data_set),
-                        ctx.supported_ts.is_implicit_VR,
-                        ctx.supported_ts.is_little_endian)
+    ds = dsutils.decode(
+        cast(bytes, msg.data_set),
+        ctx.supported_ts.is_implicit_VR,
+        ctx.supported_ts.is_little_endian
+    )
 
     remote_ae, _, _gen = asce.ae.on_receive_move(ctx, ds, msg.move_destination)
 
@@ -134,15 +141,22 @@ def qr_move_scp(asce: asceprovider.AssociationAcceptor,
             else:
                 success += 1
             completed += 1
-            _send_ops_response(asce, ctx, msg, statuses.C_MOVE_PENDING,
-                               nop, failed, warning, completed)
-        _send_ops_response(asce, ctx, msg, _final_status(failed, warning),
-                           nop, failed, warning, completed)
+            _send_ops_response(
+                asce, ctx, msg, statuses.C_MOVE_PENDING,
+                nop, failed, warning, completed
+            )
+        _send_ops_response(
+            asce, ctx, msg, _final_status(failed, warning),
+            nop, failed, warning, completed
+        )
 
 
 @sopclass.sop_classes(sopclass.GET_SOP_CLASSES)
-def qr_get_scp(asce: asceprovider.AssociationAcceptor,
-               ctx: fsm.PContextDef, msg: dimsemessages.CGetRQMessage) -> None:
+def qr_get_scp(
+        asce: asceprovider.AssociationAcceptor,
+        ctx: fsm.PContextDef,
+        msg: dimsemessages.CGetRQMessage
+) -> None:
     """Query/Retrieve C-GET service implementation.
 
     :param asce: active association
@@ -156,8 +170,9 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
         # A C-GET-RQ without an Identifier cannot be processed (mirrors the
         # built-in C-MOVE/C-FIND services): respond with a failure status
         # instead of aborting the association.
-        _send_ops_response(asce, ctx, msg, statuses.C_GET_UNABLE_TO_PROCESS,
-                           0, 0, 0, 0)
+        _send_ops_response(
+            asce, ctx, msg, statuses.C_GET_UNABLE_TO_PROCESS, 0, 0, 0, 0
+        )
         return
 
     ds = dsutils.decode(cast(bytes, msg.data_set),
@@ -205,8 +220,12 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
         else:
             success += 1
         completed += 1
-        _send_ops_response(asce, ctx, msg, statuses.C_GET_PENDING,
-                           nop, failed, warning, completed)
+        _send_ops_response(
+            asce, ctx, msg, statuses.C_GET_PENDING,
+            nop, failed, warning, completed
+        )
 
-    _send_ops_response(asce, ctx, msg, _final_status(failed, warning),
-                       nop, failed, warning, completed)
+    _send_ops_response(
+        asce, ctx, msg, _final_status(failed, warning),
+        nop, failed, warning, completed
+    )

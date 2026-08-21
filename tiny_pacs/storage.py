@@ -55,8 +55,11 @@ class StorageBase(component.Component[TConfig]):
 
     Provides basic storage functionality, common for all storage components.
     """
-    def __init__(self, bus: trolleybus.EventBus,
-                 config: TConfig | dict[str, Any]):
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: TConfig | dict[str, Any]
+    ) -> None:
         """Component initialization.
 
         Subscribes to all storage-related events.
@@ -90,8 +93,10 @@ class StorageBase(component.Component[TConfig]):
         """
         return self.send_one(events.Atomic, None)
 
-    def on_get_file(self,
-                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+    def on_get_file(
+            self,
+            payload: events.GetFilePayload
+    ) -> tuple[BinaryIO, int]:
         """Handles `GetFile` event from AE
 
         :param payload: presentation context and command Dataset
@@ -120,9 +125,10 @@ class StorageBase(component.Component[TConfig]):
         """
         raise NotImplementedError()
 
-    def on_store_get_files(self,
-                           sop_instance_uids: list[str]
-                           ) -> Iterable[events.StoredFile]:
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
         """Handles `GetFiles` event
 
         :param sop_instance_uids: list of SOP Instance UIDs
@@ -133,9 +139,13 @@ class StorageBase(component.Component[TConfig]):
         """
         raise NotImplementedError()
 
-    def new_file(self, sop_instance_uid: str, sop_class_uid: str,
-                 transfer_syntax: str | uid.UID, file_name: str
-                 ) -> StorageFiles:
+    def new_file(
+            self,
+            sop_instance_uid: str,
+            sop_class_uid: str,
+            transfer_syntax: str | uid.UID,
+            file_name: str
+    ) -> StorageFiles:
         """Adds new file record to the database
 
         :param sop_instance_uid: file SOP Instance UID
@@ -203,8 +213,10 @@ class StorageBase(component.Component[TConfig]):
                       sop_instance_uid)
         return file_name
 
-    def verify(self, instances: list[tuple[uid.UID, uid.UID]]
-               ) -> tuple[frozenset, frozenset]:
+    def verify(
+            self,
+            instances: list[tuple[uid.UID, uid.UID]]
+    ) -> tuple[frozenset, frozenset]:
         """Verifies that the provided SOP Instance UIDs are successfully
         stored
 
@@ -226,9 +238,10 @@ class StorageBase(component.Component[TConfig]):
         self.log_debug('Verification, missing from storage: %r', failure)
         return success, failure
 
-    def find_files(self,
-                   sop_instance_uids: Sequence[str]
-                   ) -> 'peewee.ModelSelect[StorageFiles]':
+    def find_files(
+            self,
+            sop_instance_uids: Sequence[str]
+    ) -> 'peewee.ModelSelect[StorageFiles]':
         """Find stored files based on a list of SOP Instance UIDs
 
         :param sop_instance_uids: list of SOP Instance UIDs
@@ -283,8 +296,11 @@ class FileStorage(StorageBase[FileStorageConfig],
 
     config_model = FileStorageConfig
 
-    def __init__(self, bus: trolleybus.EventBus,
-                 config: FileStorageConfig | dict[str, Any]):
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: FileStorageConfig | dict[str, Any]
+    ) -> None:
         """Component initialization.
 
         Uses the configured storage directory or creates a temporary one
@@ -351,9 +367,10 @@ class FileStorage(StorageBase[FileStorageConfig],
         file_name = os.path.join(self.storage_dir, file_name)
         self.remove_nothrow(file_name)
 
-    def on_store_get_files(self,
-                           sop_instance_uids: list[str]
-                           ) -> Iterable[events.StoredFile]:
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
         """Handles `GetFiles` event
 
         :param sop_instance_uids: list of SOP Instance UIDs
@@ -396,8 +413,11 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
     Stores all incoming datasets in RAM. Intended for testing only.
     """
 
-    def __init__(self, bus: trolleybus.EventBus,
-                 config: component.ComponentConfig | dict[str, Any]):
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: component.ComponentConfig | dict[str, Any]
+    ) -> None:
         """Component initialization.
 
         :param bus: event bus
@@ -409,8 +429,10 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         self._temp_files: dict[str, tuple[BinaryIO, int]] = {}
         self._stored_files: dict[str, pydicom.Dataset] = {}
 
-    def on_get_file(self,
-                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+    def on_get_file(
+            self,
+            payload: events.GetFilePayload
+    ) -> tuple[BinaryIO, int]:
         """Handles `GetFile` event: stores the dataset in memory.
 
         :param payload: presentation context and command Dataset
@@ -447,9 +469,10 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         except KeyError:
             pass
 
-    def on_store_get_files(self,
-                           sop_instance_uids: list[str]
-                           ) -> Iterable[events.StoredFile]:
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
         """Handles `GetFiles` event
 
         :param sop_instance_uids: list of SOP Instance UIDs
@@ -469,8 +492,11 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
 
     Intended for testing only.
     """
-    def __init__(self, bus: trolleybus.EventBus,
-                 config: component.ComponentConfig | dict[str, Any]):
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: component.ComponentConfig | dict[str, Any]
+    ) -> None:
         """Component initialization.
 
         :param bus: event bus
@@ -481,8 +507,10 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
         super().__init__(bus, config)
         self._temp_files: set[str] = set()
 
-    def on_get_file(self,
-                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+    def on_get_file(
+            self,
+            payload: events.GetFilePayload
+    ) -> tuple[BinaryIO, int]:
         """Handles `GetFile` event: creates a new temporary file.
 
         :param payload: presentation context and command Dataset
@@ -512,9 +540,10 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
         self.remove_nothrow(file_name)
         self._temp_files.remove(file_name)
 
-    def on_store_get_files(self,
-                           sop_instance_uids: list[str]
-                           ) -> Iterable[events.StoredFile]:
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
         """Handles `GetFiles` event
 
         :param sop_instance_uids: list of SOP Instance UIDs

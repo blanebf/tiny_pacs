@@ -19,9 +19,15 @@ class Question:
     :ivar default_repr: displayed default, if different from ``default``
     """
 
-    def __init__(self, key: str, prompt: str, handler: Callable[[Any], Any],
-                 repeatable: bool = False, default: Any = None,
-                 default_repr: str | None = None):
+    def __init__(
+            self,
+            key: str,
+            prompt: str,
+            handler: Callable[[Any], Any],
+            repeatable: bool = False,
+            default: Any = None,
+            default_repr: str | None = None
+    ) -> None:
         """Initializes the question
 
         :param key: configuration key for the answer

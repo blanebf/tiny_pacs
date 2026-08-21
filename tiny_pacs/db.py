@@ -59,8 +59,11 @@ class Database(component.Component[DatabaseConfig]):
 
     config_model = DatabaseConfig
 
-    def __init__(self, bus: trolleybus.EventBus,
-                 config: DatabaseConfig | dict[str, Any]):
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: DatabaseConfig | dict[str, Any]
+    ) -> None:
         """Initializes component
 
         :param bus: event bus
@@ -138,8 +141,9 @@ class Database(component.Component[DatabaseConfig]):
         self.log_info('Initialized SQLite database %s', db_name)
         return cast(
             peewee.SqliteDatabase,
-            pool.PooledSqliteDatabase(db_name, uri=config.uri,
-                                      max_connections=config.max_conn)
+            pool.PooledSqliteDatabase(
+                db_name, uri=config.uri, max_connections=config.max_conn
+            )
         )
 
     def _init_postgres(self) -> peewee.PostgresqlDatabase:
