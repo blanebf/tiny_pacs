@@ -43,10 +43,10 @@ class StorageFiles(peewee.Model):
     #: File name
     file_name = peewee.TextField()
 
-    #: When a file were added to a storage
+    #: When the file was added to the storage
     added = peewee.DateTimeField(default=_utcnow, index=True)
 
-    #: Is file stored successfully already
+    #: Whether the file has been stored successfully
     is_stored = peewee.BooleanField(index=True, default=False)
 
 
@@ -87,15 +87,18 @@ class StorageBase(component.Component[TConfig]):
 
         :param payload: presentation context and command Dataset
         :type payload: events.GetFilePayload
+        :return: file object to store the incoming dataset in and the start
+                 position of the dataset stream within it
+        :rtype: tuple[BinaryIO, int]
         """
         raise NotImplementedError()
 
     def on_store_done(self, ds: pydicom.Dataset) -> None:
         """Handles `StoreDone` event
 
-        :param ds: stored command dataset
+        :param ds: successfully stored dataset
         :type ds: pydicom.Dataset
-        :raises NotImplementedError: [description]
+        :raises NotImplementedError: always, subclasses must implement this
         """
         raise NotImplementedError()
 
@@ -104,7 +107,7 @@ class StorageBase(component.Component[TConfig]):
 
         :param ds: dataset that failed to store
         :type ds: pydicom.Dataset
-        :raises NotImplementedError: [description]
+        :raises NotImplementedError: always, subclasses must implement this
         """
         raise NotImplementedError()
 
@@ -115,7 +118,9 @@ class StorageBase(component.Component[TConfig]):
 
         :param sop_instance_uids: list of SOP Instance UIDs
         :type sop_instance_uids: list
-        :raises NotImplementedError: [description]
+        :yield: stored files: tuples of SOP Class UID, Transfer Syntax UID
+                and either a file name, a dataset or a file object
+        :raises NotImplementedError: always, subclasses must implement this
         """
         raise NotImplementedError()
 
@@ -129,11 +134,11 @@ class StorageBase(component.Component[TConfig]):
         :param sop_class_uid: file SOP Class UID
         :type sop_class_uid: str
         :param transfer_syntax: file original Transfer Syntax UID
-        :type transfer_syntax: str
+        :type transfer_syntax: str or uid.UID
         :param file_name: file name in storage
         :type file_name: str
         :return: new file record
-        :rtype: StoredFiles
+        :rtype: StorageFiles
         """
         self.log_info(
             'Storing new file '
@@ -159,7 +164,7 @@ class StorageBase(component.Component[TConfig]):
     def file_stored(self, sop_instance_uid: str) -> None:
         """Set file with specific SOP Instance UID as successfully stored
 
-        :param sop_instance_uid: file SOP Instnace UID
+        :param sop_instance_uid: file SOP Instance UID
         :type sop_instance_uid: str
         """
         with self.atomic():
@@ -191,7 +196,7 @@ class StorageBase(component.Component[TConfig]):
 
     def verify(self, instances: list[tuple[uid.UID, uid.UID]]
                ) -> tuple[frozenset, frozenset]:
-        """Verify that provided list of SOP Instnace UIDs are successfully
+        """Verifies that the provided SOP Instance UIDs are successfully
         stored
 
         :param instances: list of tuples (SOP Class UID, SOP Instance UID)

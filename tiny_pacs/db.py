@@ -48,7 +48,7 @@ class DatabaseConfig(component.ComponentConfig):
 class Database(component.Component[DatabaseConfig]):
     """DB component
 
-    Handles database connections, transaction and all database models.
+    Handles database connections, transactions and all database models.
     """
     # TODO: Add thread locking for SQLite, to prevent timeout errors
 

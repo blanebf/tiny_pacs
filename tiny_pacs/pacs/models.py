@@ -25,7 +25,7 @@ class Patient(peewee.Model):
     #: Primary key
     id = peewee.AutoField(primary_key=True)
 
-    #: Patinet's Name (0010, 0010) PN
+    #: Patient's Name (0010, 0010) PN
     patient_name = peewee.CharField(max_length=64*5+4, index=True, null=True)
 
     #: Patient's ID (0010, 0020) LO

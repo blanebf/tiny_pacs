@@ -41,7 +41,7 @@ class MoveRoot(enum.Enum):
 class DICOMClientError(Exception):
     """DICOM Client error.
 
-    Base class for all DICOM-related client interactions error.
+    Base class for all DICOM-related client interaction errors.
 
     :ivar status: DICOM error status code
     """
@@ -111,7 +111,8 @@ class Client(component.Component[ClientConfig]):
 class DICOMClient:
     """DICOM Client implementation.
 
-    Provides some convinience wrappers around common services in SCU role.
+    Provides some convenience wrappers around common services in the SCU
+    role.
 
     :ivar msg_id: current message ID
     :ivar local_ae: local AE Title
@@ -144,8 +145,8 @@ class DICOMClient:
     def echo(self) -> None:
         """Sends C-ECHO message (verification SCU)
 
-        :raises CEchoError: raised when C-ECHO-RSP have a non-successfull
-                            response code
+        :raises CEchoError: raised when the C-ECHO-RSP status indicates
+                            a failure
         """
         self.log.info('Sending C-ECHO request to %r', self.remote_ae)
         self.aet.add_scu(sopclass.verification_scu)
@@ -165,10 +166,10 @@ class DICOMClient:
         :type ds: pydicom.Dataset
         :param root: C-FIND root, defaults to FindRoot.STUDY
         :type root: FindRoot, optional
-        :raises CFindError: raised if C-FIND-RSP have a non-successfull
-                            response code
+        :raises CFindError: raised if a C-FIND-RSP status indicates
+                            a failure
         :yield: C-FIND results
-        :rtype: Generator[pydicom.Dataset]
+        :rtype: Iterator[pydicom.Dataset]
         """
         self.aet.add_scu(sopclass.qr_find_scu)
         self.log.info('Sending C-FIND request to %r', self.remote_ae)
@@ -215,11 +216,11 @@ class DICOMClient:
                         sop_class_uid: uid.UID) -> None:
         """Make a C-STORE request with existing association
 
-        :param asce: Existing assocation
+        :param asce: existing association
         :type asce: asceprovider.AssociationRequester
         :param ds: dataset to store (filename or dataset itself)
         :type ds: pydicom.Dataset | str
-        :param sop_class_uid: dataet SOP Class UID
+        :param sop_class_uid: dataset SOP Class UID
         :type sop_class_uid: uid.UID
         :raises CStoreError: raised if C-STORE failed
         """

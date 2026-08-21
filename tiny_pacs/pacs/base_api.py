@@ -74,11 +74,11 @@ class BaseAPI:
         :param model: PACS level model
         :type model: peewee.Model
         :param query: C-FIND SQL query
-        :type query: peewee.Query
+        :type query: peewee.ModelSelect
         :param ds: C-FIND request
         :type ds: pydicom.Dataset
-        :param skipped: skipped attributes, defaults to None
-        :type skipped: list, optional
+        :param skipped: skipped tags, defaults to None
+        :type skipped: set[BaseTag], optional
         :return: query and response attributes
         :rtype: tuple
         """
@@ -109,16 +109,16 @@ class BaseAPI:
         """Build filter for specific attribute
 
         :param query: current SQL query
-        :type query: peewee.Query
+        :type query: peewee.ModelSelect
         :param attr: C-FIND request attribute
-        :type attr: [type]
+        :type attr: peewee.Field
         :param vr: element VR
         :type vr: str
         :param elem: DICOM element
-        :type elem: [type]
-        :raises ValueError: raises ValueError for unsupported VR
-        :return: query with added filter
-        :rtype: peewee.Query
+        :type elem: pydicom.DataElement
+        :raises ValueError: raised for an unsupported VR
+        :return: query with the filter added
+        :rtype: peewee.ModelSelect
         """
         if vr in TEXT_VR:
             if vr == 'PN':
@@ -158,9 +158,10 @@ class BaseAPI:
 
         :param instance: database model instance
         :type instance: peewee.Model
-        :param response_attrs: list of response attributes (tag,
-                               attribute name in the database model and VR)
-        :type response_attrs: list
+        :param response_attrs: list of response attributes: ``(tag,
+                               attribute name or attribute path, VR,
+                               encoding function)`` tuples
+        :type response_attrs: ResponseAttrs
         :param encoding: response encoding
         :type encoding: str
         :return: C-FIND-RSP dataset

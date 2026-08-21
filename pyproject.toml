@@ -41,6 +41,10 @@ ruff = "*"
 mypy = "^1.0"
 flake8 = "^7.0"
 
+[tool.poetry.group.docs.dependencies]
+sphinx = "^7.2"
+sphinx-rtd-theme = "^3.0"
+
 [tool.poetry.scripts]
 tiny-pacs = "tiny_pacs.__main__:main"
 

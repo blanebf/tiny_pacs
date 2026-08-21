@@ -75,7 +75,7 @@ class Server:
     def initialize_components(self) -> Iterator[component.Component[Any]]:
         """Component initialization
 
-        :yield: initializes components
+        :yield: initialized component
         :rtype: component.Component
         """
         for _component, _config in self.config.components.items():

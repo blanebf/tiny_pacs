@@ -304,10 +304,12 @@ class AE(applicationentity.AE):
         :type context: fsm.PContextDef
         :param ds: C-GET request dataset
         :type ds: pydicom.Dataset
-        :raises exceptions.EventHandlingError: raised in case there is an error
-                                               while handling C-GET request
-        :return: response datasets as tuples of SOP Class UID, Transfer Syntax
-                 UID and either file name or pydicom.Dataset
+        :raises exceptions.EventHandlingError: raised if there is an error
+                                               while handling the C-GET
+                                               request
+        :yield: stored files: tuples of SOP Class UID, Transfer Syntax UID
+                and either a file name, a dataset or a file object
+        :rtype: events.StoredFile
         """
         self.log.info('Received C-GET %r', context)
         if self.dump_ds:

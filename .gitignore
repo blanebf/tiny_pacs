@@ -19,6 +19,10 @@ dist/
 build/
 *.egg-info/
 
+# Sphinx documentation
+docs/_build/
+docs/api/generated/
+
 # tiny_pacs artifacts
 pacs.db
 *.log

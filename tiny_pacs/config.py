@@ -110,7 +110,7 @@ COMPONENT_REGISTRY: dict[str, type[component.Component[Any]]] = {
 def register_component(
         name: str, factory: type[component.Component[Any]]
 ) -> None:
-    """Registers a component class and its configuration model.
+    """Registers a component class.
 
     Registered components become available in the ``components`` config
     section; their configuration is validated against the model declared via
@@ -241,7 +241,7 @@ class Config(pydantic.BaseModel):
         return _validate_component_configs(value, _default_components())
 
     def update_config(self, _config: ConfigInput) -> None:
-        """Read configuration or
+        """Reads a configuration source and updates this configuration.
 
         Configured component entries replace any previous entry for the same
         component wholesale; components that are not configured keep their

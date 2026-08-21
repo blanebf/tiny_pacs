@@ -48,19 +48,20 @@ class PACSConfig(component.ComponentConfig):
 
 
 class PACS(component.Component[PACSConfig]):
-    """"Component that implements PACS services themselves.
+    """Component that implements PACS services themselves.
 
-    Provides handling to the following events:
+    Handles the following events:
 
         * :class:`~tiny_pacs.events.Store`
         * :class:`~tiny_pacs.events.Find`
         * :class:`~tiny_pacs.events.Move`
         * :class:`~tiny_pacs.events.Get`
         * :class:`~tiny_pacs.events.Commitment`
+        * :class:`~tiny_pacs.events.Tables`
 
     Component also handles all relevant DB interactions, except for keeping
     track of stored datasets. That function is relegated to components in
-    :module:`~tiny_pacs.storage`
+    :mod:`~tiny_pacs.storage`
     """
 
     config_model = PACSConfig
@@ -146,9 +147,10 @@ class PACS(component.Component[PACSConfig]):
         :param payload: presentation context, incoming dataset and move
                         destination
         :type payload: events.MovePayload
-        :return: list of tuples: SOP Class UID, Transfer Syntax and either
-                 filename or dataset
-        :rtype: list
+        :return: list of stored files: tuples of SOP Class UID, Transfer
+                 Syntax UID and either a file name, a dataset or a file
+                 object
+        :rtype: list[events.StoredFile]
         """
         destination = payload.destination
         self.log_info('Handling move request to %s (%r)', destination,
@@ -165,9 +167,10 @@ class PACS(component.Component[PACSConfig]):
 
         :param payload: presentation context and incoming dataset
         :type payload: events.GetPayload
-        :return: list of tuples: SOP Class UID, Transfer Syntax and either
-                 filename or dataset
-        :rtype: list
+        :return: list of stored files: tuples of SOP Class UID, Transfer
+                 Syntax UID and either a file name, a dataset or a file
+                 object
+        :rtype: list[events.StoredFile]
         """
         self.log_info('Handling get request (%r)', payload.context)
         instances = [
