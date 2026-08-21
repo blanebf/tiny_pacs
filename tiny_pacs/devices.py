@@ -1,3 +1,9 @@
+"""Remote DICOM devices registry.
+
+Provides the :class:`Devices` component that keeps device configurations
+by AE title and optionally registers new devices from incoming
+associations.
+"""
 import dataclasses
 from typing import Any
 
@@ -66,6 +72,14 @@ class DevicesConfig(component.ComponentConfig):
 
 
 class Devices(component.Component[DevicesConfig]):
+    """Component that keeps remote device configurations.
+
+    Handles the following events:
+
+        * :class:`~tiny_pacs.events.Assoc` (when ``auto_add`` is enabled)
+        * :class:`~tiny_pacs.events.DeviceByAE`
+    """
+
     config_model = DevicesConfig
 
     def __init__(self, bus: trolleybus.EventBus,
@@ -80,6 +94,11 @@ class Devices(component.Component[DevicesConfig]):
 
     @classmethod
     def interactive(cls) -> questions.Questionnaire:
+        """Returns interactive questionnaire for component configuration
+
+        :return: devices configuration questionnaire
+        :rtype: questions.Questionnaire
+        """
         def add_device(value: str) -> dict[str, Any]:
             aet, address, port = value.split()
             return {'aet': aet, 'address': address, 'port': int(port)}
@@ -101,9 +120,24 @@ class Devices(component.Component[DevicesConfig]):
         ])
 
     def device_by_ae(self, _ae: str) -> DeviceConfig | None:
+        """Handles `DeviceByAE` event
+
+        :param _ae: AE title of the device
+        :type _ae: str
+        :return: device configuration or None for unknown AE titles
+        :rtype: DeviceConfig or None
+        """
         return self.devices.get(_ae)
 
     def add_device_from_asce(self, payload: events.AssocPayload) -> None:
+        """Handles `Assoc` event: registers the calling AE title.
+
+        Unknown calling AE titles are added as new devices using the peer
+        address and :attr:`default_port`.
+
+        :param payload: association acceptor and request parameters
+        :type payload: events.AssocPayload
+        """
         # TODO add C-ECHO, to check availability
         asce = payload.asce
         assoc = payload.assoc
@@ -126,8 +160,14 @@ class Devices(component.Component[DevicesConfig]):
 
 
 class DeviceQuestion(questions.Question):
+    """Repeatable question collecting device definitions.
+
+    Answers are converted to device dictionaries and keyed by AE title.
+    """
+
     @property
     def value(self) -> dict[str, Any]:
+        """Collected devices keyed by AE title"""
         if not self._value:
             return {}
         devices = (self.handler(v) for v in self._value)

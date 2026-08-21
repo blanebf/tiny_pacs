@@ -1,3 +1,6 @@
+"""A small pure-Python PACS (Picture Archiving and Communication
+System).
+"""
 from importlib.metadata import PackageNotFoundError, version
 
 try:

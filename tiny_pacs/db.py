@@ -1,3 +1,8 @@
+"""Database component.
+
+Manages database connections and transactions, collects tables from the
+other components and creates them on start.
+"""
 import enum
 from collections.abc import Callable, Iterator
 from itertools import chain
@@ -70,6 +75,11 @@ class Database(component.Component[DatabaseConfig]):
 
     @classmethod
     def interactive(cls) -> 'DBQuestionnaire':
+        """Returns interactive questionnaire for component configuration
+
+        :return: DB configuration questionnaire
+        :rtype: DBQuestionnaire
+        """
         return DBQuestionnaire()
 
     def on_start(self) -> None:
@@ -105,6 +115,14 @@ class Database(component.Component[DatabaseConfig]):
 
     def string_agg_func(self, _: None = None
                         ) -> Callable[..., peewee.Function]:
+        """Handles `StringAgg` event.
+
+        Returns the string aggregate SQL function of the active DB driver.
+
+        :return: aggregate function
+        :rtype: Callable[..., peewee.Function]
+        :raises ValueError: raised for an unexpected DB object
+        """
         if isinstance(self.db, peewee.SqliteDatabase):
             return peewee.fn.group_concat
         if isinstance(self.db, peewee.PostgresqlDatabase):
@@ -147,6 +165,8 @@ class Database(component.Component[DatabaseConfig]):
 
 
 class DBQuestionnaire(questions.Questionnaire):
+    """Interactive questionnaire for the :class:`Database` component."""
+
     def __init__(self) -> None:
         self.db_driver = questions.Question(
             'driver',
@@ -184,6 +204,7 @@ class DBQuestionnaire(questions.Questionnaire):
         ])
 
     def __iter__(self) -> Iterator[questions.Question]:
+        """Yields questions for the selected DB driver"""
         yield self.db_driver
         if self.db_driver.value == 'sqlite':
             yield self.sqlite_db_name
@@ -197,6 +218,11 @@ class DBQuestionnaire(questions.Questionnaire):
             raise ValueError(f'Unsupported DB driver {self.db_driver.value}')
 
     def value(self) -> dict[str, Any]:
+        """Returns the collected DB configuration values
+
+        :return: DB configuration dictionary
+        :rtype: dict[str, Any]
+        """
         if self.db_driver.value == 'sqlite':
             return {
                 'db_name': self.sqlite_db_name.value

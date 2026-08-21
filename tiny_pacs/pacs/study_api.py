@@ -1,3 +1,4 @@
+"""Study level Query/Retrieve API."""
 from collections.abc import Iterator
 
 import peewee
@@ -9,12 +10,15 @@ from . import base_api, models
 
 
 def _dedup_multivalue(value: str | None) -> str | None:
+    """Removes duplicates from a multi-valued attribute."""
     if not value:
         return value
     return '\\'.join(set(value.split('\\')))
 
 
 class StudyAPI(base_api.BaseAPI):
+    """API for the STUDY Query/Retrieve level."""
+
     def c_store(
         self, patient: peewee.Model, ds: pydicom.Dataset
     ) -> peewee.Model:

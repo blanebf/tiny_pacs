@@ -46,6 +46,12 @@ class DICOMClientError(Exception):
     :ivar status: DICOM error status code
     """
     def __init__(self, status: statuses.Status, *args: object):
+        """Initializes the error.
+
+        :param status: DICOM error status code
+        :type status: statuses.Status
+        :param args: exception message arguments
+        """
         super().__init__(*args)
         self.status = status
 
@@ -87,6 +93,15 @@ class Client(component.Component[ClientConfig]):
 
     def __init__(self, bus: trolleybus.EventBus,
                  config: ClientConfig | dict[str, Any]):
+        """Component initialization.
+
+        Subscribes to :class:`~tiny_pacs.events.GetClient`.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: ClientConfig or dict
+        """
         super().__init__(bus, config)
         self.subscribe(events.GetClient, self.get)
 
@@ -123,6 +138,13 @@ class DICOMClient:
 
     def __init__(self, local_ae: str,
                  remote_ae: devices.DeviceConfig | dict[str, Any]):
+        """Initializes the client.
+
+        :param local_ae: local AE Title
+        :type local_ae: str
+        :param remote_ae: remote device settings
+        :type remote_ae: devices.DeviceConfig or dict
+        """
         self.msg_id = 0
         self.local_ae = local_ae
         if isinstance(remote_ae, dict):

@@ -1,3 +1,8 @@
+"""Base API for PACS Query/Retrieve implementations.
+
+Builds peewee queries from C-FIND request datasets and encodes query
+results back into C-FIND response datasets.
+"""
 import logging
 from collections.abc import Iterator
 from typing import Any, Protocol, TypeAlias, TypeVar
@@ -13,6 +18,8 @@ TM = TypeVar('TM', bound=peewee.Model)
 #: Model with a DICOM tag to ``(attribute name, VR)`` mapping, used for
 #: building C-FIND queries
 class MappedModel(Protocol):
+    """Protocol of a peewee model providing a DICOM tag mapping."""
+
     mapping: dict[int, tuple[str, str]]
 
 
@@ -56,11 +63,29 @@ TEXT_VR = ['AE', 'CS', 'LO', 'LT', 'PN', 'SH', 'ST', 'UC', 'UR', 'UT', 'UI']
 
 
 class BaseAPI:
+    """Base implementation of the PACS level APIs.
+
+    Provides query building and response encoding shared by the patient,
+    study, series and instance level APIs.
+    """
+
     @classmethod
     def name(cls) -> str:
+        """API name.
+
+        Defaults to class name
+
+        :return: API name
+        :rtype: str
+        """
         return cls.__name__
 
     def __init__(self, bus: trolleybus.EventBus):
+        """Initializes the API
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        """
         self.bus = bus
         self.log = logging.getLogger(self.name())
 
@@ -187,6 +212,11 @@ class BaseAPI:
 
     def _text_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
                      value: str | list[str]) -> 'peewee.ModelSelect[TM]':
+        """Adds a filter for a text attribute.
+
+        Single character (``?``) and multiple character (``*``) DICOM
+        wildcards are translated to the SQL LIKE wildcards.
+        """
         if isinstance(value, list):
             return query.where(attr << value)
         value = value.replace('?', '_')
@@ -195,6 +225,7 @@ class BaseAPI:
 
     def _date_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
                      value: str) -> 'peewee.ModelSelect[TM]':
+        """Adds a filter for a date (DA) attribute, range-aware."""
         if '-' in value:
             start, end = value.split('-')
             # TODO: Add normalization for shorter value
@@ -204,6 +235,7 @@ class BaseAPI:
 
     def _time_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
                      value: str) -> 'peewee.ModelSelect[TM]':
+        """Adds a filter for a time (TM) attribute, range-aware."""
         if '-' in value:
             start, end = value.split('-')
             # TODO: Add normalization for shorter value
@@ -214,6 +246,7 @@ class BaseAPI:
     def _date_time_filter(self, query: 'peewee.ModelSelect[TM]',
                           attr: peewee.Field,
                           value: str) -> 'peewee.ModelSelect[TM]':
+        """Adds a filter for a date-time (DT) attribute, range-aware."""
         if '-' in value:
             start, end = value.split('-')
             # TODO: Add normalization for shorter value

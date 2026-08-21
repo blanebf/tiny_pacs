@@ -1,3 +1,4 @@
+"""Command line interface of Tiny PACS."""
 import argparse
 import sys
 
@@ -5,6 +6,7 @@ from . import config, interactive, server
 
 
 def main() -> None:
+    """Entry point of the ``tiny-pacs`` command."""
     args = parse_args()
     if args.command == 'config':
         config_command(args)
@@ -13,6 +15,11 @@ def main() -> None:
 
 
 def run_command(args: argparse.Namespace) -> None:
+    """Runs the Tiny PACS server.
+
+    :param args: parsed command line arguments
+    :type args: argparse.Namespace
+    """
     pacs_conf = config.Config()
     pacs_conf.update_config(args.config)
     if args.aet:
@@ -50,6 +57,11 @@ def config_command(args: argparse.Namespace) -> None:
 
 
 def add_run_arguments(parser: argparse.ArgumentParser) -> None:
+    """Adds arguments of the ``run`` command to the parser.
+
+    :param parser: parser the arguments are added to
+    :type parser: argparse.ArgumentParser
+    """
     parser.add_argument('-c', '--config', default=[], nargs='*',
                         help='Tiny PACS configuration')
     parser.add_argument('-a', '--aet', default=None,
@@ -61,6 +73,11 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Builds the command line parser with all subcommands.
+
+    :return: command line parser
+    :rtype: argparse.ArgumentParser
+    """
     parser = argparse.ArgumentParser(
         prog='tiny-pacs',
         epilog='Running tiny-pacs without a command is equivalent to '

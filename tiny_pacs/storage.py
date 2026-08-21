@@ -57,6 +57,15 @@ class StorageBase(component.Component[TConfig]):
     """
     def __init__(self, bus: trolleybus.EventBus,
                  config: TConfig | dict[str, Any]):
+        """Component initialization.
+
+        Subscribes to all storage-related events.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: TConfig or dict
+        """
         super().__init__(bus, config)
 
         self.subscribe(events.GetFile, self.on_get_file)
@@ -276,6 +285,16 @@ class FileStorage(StorageBase[FileStorageConfig],
 
     def __init__(self, bus: trolleybus.EventBus,
                  config: FileStorageConfig | dict[str, Any]):
+        """Component initialization.
+
+        Uses the configured storage directory or creates a temporary one
+        that is removed on exit.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: FileStorageConfig or dict
+        """
         super().__init__(bus, config)
         storage_dir = self.config.storage_dir
         if storage_dir is None:
@@ -286,6 +305,11 @@ class FileStorage(StorageBase[FileStorageConfig],
 
     @classmethod
     def interactive(cls) -> questions.Questionnaire:
+        """Returns interactive questionnaire for component configuration
+
+        :return: storage configuration questionnaire
+        :rtype: questions.Questionnaire
+        """
         return questions.Questionnaire([
             questions.Question(
                 'storage_dir', 'Enter storage directory',
@@ -295,6 +319,13 @@ class FileStorage(StorageBase[FileStorageConfig],
 
     def on_get_file(self,
                     payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+        """Handles `GetFile` event: creates a new file in the storage.
+
+        :param payload: presentation context and command Dataset
+        :type payload: events.GetFilePayload
+        :return: file object and the dataset stream start position
+        :rtype: tuple[BinaryIO, int]
+        """
         command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
@@ -311,9 +342,11 @@ class FileStorage(StorageBase[FileStorageConfig],
         return ds, start
 
     def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event: marks the file as stored."""
         self.file_stored(ds.SOPInstanceUID)
 
     def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event: removes the file."""
         file_name = self.remove_file(ds.SOPInstanceUID)
         file_name = os.path.join(self.storage_dir, file_name)
         self.remove_nothrow(file_name)
@@ -321,6 +354,13 @@ class FileStorage(StorageBase[FileStorageConfig],
     def on_store_get_files(self,
                            sop_instance_uids: list[str]
                            ) -> Iterable[events.StoredFile]:
+        """Handles `GetFiles` event
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :yield: stored files
+        :rtype: events.StoredFile
+        """
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             file_name = os.path.join(self.storage_dir, file_record.file_name)
@@ -358,12 +398,26 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
 
     def __init__(self, bus: trolleybus.EventBus,
                  config: component.ComponentConfig | dict[str, Any]):
+        """Component initialization.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: ComponentConfig or dict
+        """
         super().__init__(bus, config)
         self._temp_files: dict[str, tuple[BinaryIO, int]] = {}
         self._stored_files: dict[str, pydicom.Dataset] = {}
 
     def on_get_file(self,
                     payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+        """Handles `GetFile` event: stores the dataset in memory.
+
+        :param payload: presentation context and command Dataset
+        :type payload: events.GetFilePayload
+        :return: file object and the dataset stream start position
+        :rtype: tuple[BinaryIO, int]
+        """
         command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
@@ -377,6 +431,7 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         return fp, start
 
     def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event: reads the dataset into memory."""
         sop_instance_uid = ds.SOPInstanceUID
         self.file_stored(ds.SOPInstanceUID)
         fp, start = self._temp_files[sop_instance_uid]
@@ -385,6 +440,7 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         del self._temp_files[sop_instance_uid]
 
     def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event: drops the in-memory dataset."""
         file_name = self.remove_file(ds.SOPInstanceUID)
         try:
             del self._temp_files[file_name]
@@ -394,6 +450,13 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
     def on_store_get_files(self,
                            sop_instance_uids: list[str]
                            ) -> Iterable[events.StoredFile]:
+        """Handles `GetFiles` event
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :yield: stored files
+        :rtype: events.StoredFile
+        """
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             ds = self._stored_files[file_record.sop_instance_uid]
@@ -408,11 +471,25 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
     """
     def __init__(self, bus: trolleybus.EventBus,
                  config: component.ComponentConfig | dict[str, Any]):
+        """Component initialization.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: ComponentConfig or dict
+        """
         super().__init__(bus, config)
         self._temp_files: set[str] = set()
 
     def on_get_file(self,
                     payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+        """Handles `GetFile` event: creates a new temporary file.
+
+        :param payload: presentation context and command Dataset
+        :type payload: events.GetFilePayload
+        :return: file object and the dataset stream start position
+        :rtype: tuple[BinaryIO, int]
+        """
         command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
@@ -426,9 +503,11 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
         return fp, start
 
     def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event: marks the file as stored."""
         self.file_stored(ds.SOPInstanceUID)
 
     def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event: removes the temporary file."""
         file_name = self.remove_file(ds.SOPInstanceUID)
         self.remove_nothrow(file_name)
         self._temp_files.remove(file_name)
@@ -436,6 +515,13 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
     def on_store_get_files(self,
                            sop_instance_uids: list[str]
                            ) -> Iterable[events.StoredFile]:
+        """Handles `GetFiles` event
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :yield: stored files
+        :rtype: events.StoredFile
+        """
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             file_name = file_record.file_name
@@ -443,6 +529,7 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
                    file_record.transfer_syntax, file_name)
 
     def on_exit(self) -> None:
+        """Removes left-over temporary files on exit."""
         super().on_exit()
         for file_name in self._temp_files:
             self.remove_nothrow(file_name)

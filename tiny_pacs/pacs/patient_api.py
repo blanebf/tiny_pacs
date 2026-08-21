@@ -1,3 +1,4 @@
+"""Patient level Query/Retrieve API."""
 from collections.abc import Iterator
 
 import peewee
@@ -9,6 +10,8 @@ from .models import Instance, Patient, Series, Study
 
 
 class PatientAPI(base_api.BaseAPI):
+    """API for the PATIENT Query/Retrieve level."""
+
     def c_store(self, ds: pydicom.Dataset) -> peewee.Model:
         """Gets or creates patient record for storage request
 

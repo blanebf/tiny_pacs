@@ -1,3 +1,4 @@
+"""Series level Query/Retrieve API."""
 from collections.abc import Iterator
 
 import peewee
@@ -8,6 +9,8 @@ from . import base_api, models
 
 
 class SeriesAPI(base_api.BaseAPI):
+    """API for the SERIES Query/Retrieve level."""
+
     def c_store(
         self, study: peewee.Model, ds: pydicom.Dataset
     ) -> peewee.Model:

@@ -1,3 +1,8 @@
+"""Interactive configuration front-ends.
+
+Provides the questionnaires for every configuration section and the
+front-ends that run them.
+"""
 from collections.abc import Iterator
 from typing import Any
 
@@ -6,6 +11,8 @@ from .questions import Question, Questionnaire
 
 
 class AEQuestionnaire(Questionnaire):
+    """Questionnaire for the ``ae`` configuration section."""
+
     key = 'ae'
 
     def __init__(self) -> None:
@@ -32,6 +39,8 @@ class AEQuestionnaire(Questionnaire):
 
 
 class LogginQuestionnaire(Questionnaire):
+    """Questionnaire for the ``log`` configuration section."""
+
     key = 'log'
     stream_handler = 'logging.StreamHandler'
     rotating_handler = 'logging.handlers.RotatingFileHandler'
@@ -70,6 +79,7 @@ class LogginQuestionnaire(Questionnaire):
         ])
 
     def __iter__(self) -> Iterator[Question]:
+        """Yields questions relevant for the selected logging handler"""
         yield self.logging_handler
         if self.logging_handler.value != self.stream_handler:
             if self.logging_handler.value == self.rotating_handler:
@@ -79,6 +89,11 @@ class LogginQuestionnaire(Questionnaire):
         yield self.logging_level
 
     def value(self) -> dict[str, Any]:
+        """Builds the logging configuration from the collected answers
+
+        :return: logging configuration dictionary
+        :rtype: dict[str, Any]
+        """
         if self.logging_handler.value == self.stream_handler:
             return {
                 'handlers': {
@@ -115,6 +130,14 @@ class LogginQuestionnaire(Questionnaire):
         }
 
     def select_logging_handler(self, value: str) -> str:
+        """Maps the selected index to a logging handler class name
+
+        :param value: selected index ("1", "2" or "3")
+        :type value: str
+        :return: logging handler class name
+        :rtype: str
+        :raises ValueError: raised for an unsupported index
+        """
         index = int(value)
         if index == 3:
             return self.rotating_handler
@@ -125,6 +148,14 @@ class LogginQuestionnaire(Questionnaire):
         raise ValueError('Unsupported logging handler')
 
     def select_logging_level(self, value: str) -> str:
+        """Maps the selected index to a logging level name
+
+        :param value: selected index ("1" to "4")
+        :type value: str
+        :return: logging level name
+        :rtype: str
+        :raises ValueError: raised for an unsupported index
+        """
         index = int(value)
         if index == 1:
             return 'DEBUG'
@@ -138,6 +169,8 @@ class LogginQuestionnaire(Questionnaire):
 
 
 class ComponentsQuestionnaire(Questionnaire):
+    """Questionnaire that selects and configures components."""
+
     key = 'components'
 
     def __init__(self) -> None:
@@ -150,6 +183,7 @@ class ComponentsQuestionnaire(Questionnaire):
         self._value: dict[str, Any] = {}
 
     def __iter__(self) -> Iterator[Question]:
+        """Yields the questions and nested component questionnaires"""
         for question in self.questions:
             yield question
             value = question.value
@@ -163,10 +197,17 @@ class ComponentsQuestionnaire(Questionnaire):
             self._value[question.key] = component_config
 
     def value(self) -> dict[str, Any]:
+        """Returns the collected component configurations
+
+        :return: component configurations by component name
+        :rtype: dict[str, Any]
+        """
         return self._value
 
 
 class InteractiveFront:
+    """Base class for interactive configuration front-ends."""
+
     def __init__(self) -> None:
         self.questionnairies = [
             AEQuestionnaire(),
@@ -238,11 +279,30 @@ class InteractiveFront:
         config.write_yaml(conf, file_name)
 
     def request_value(self, question: Question, repeatable: bool) -> str:
+        """Asks one question and returns the raw answer
+
+        :param question: question to ask
+        :type question: Question
+        :param repeatable: whether the question accepts multiple answers
+        :type repeatable: bool
+        :raises NotImplementedError: always, subclasses must implement this
+        """
         raise NotImplementedError()
 
 
 class TerminalFront(InteractiveFront):
+    """Interactive front-end that asks questions on the terminal."""
+
     def request_value(self, question: Question, repeatable: bool) -> str:
+        """Asks one question on the terminal
+
+        :param question: question to ask
+        :type question: Question
+        :param repeatable: whether the question accepts multiple answers
+        :type repeatable: bool
+        :return: raw answer entered by the user
+        :rtype: str
+        """
         _default = question.default_repr or question.default
         if not repeatable:
             return input(f'{question.prompt}[{_default}]: ')

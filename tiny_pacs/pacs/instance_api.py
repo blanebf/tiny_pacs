@@ -1,3 +1,4 @@
+"""Instance level Query/Retrieve API."""
 from collections.abc import Iterator
 
 import peewee
@@ -7,6 +8,8 @@ from . import base_api, models
 
 
 class InstanceAPI(base_api.BaseAPI):
+    """API for the IMAGE Query/Retrieve level."""
+
     def c_store(self, series: peewee.Model,
                 ds: pydicom.Dataset) -> peewee.Model:
         """C-STORE handler

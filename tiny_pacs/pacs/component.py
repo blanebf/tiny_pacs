@@ -1,3 +1,8 @@
+"""PACS component implementation.
+
+Provides C-STORE, C-FIND, C-MOVE/C-GET, Storage Commitment handling and
+the related database interactions.
+"""
 import enum
 from collections.abc import Iterator
 from itertools import chain

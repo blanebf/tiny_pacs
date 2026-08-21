@@ -96,6 +96,19 @@ class AE(applicationentity.AE):
     def __init__(self, bus: trolleybus.EventBus,
                  config: AEConfig | dict[str, Any],
                  bind_and_activate: bool = True):
+        """Initializes the AE.
+
+        Sets up TLS when configured, registers all built-in SCPs and
+        subscribes to ``MainAET`` requests.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: AE configuration
+        :type config: AEConfig or dict
+        :param bind_and_activate: bind the port immediately, defaults to
+                True
+        :type bind_and_activate: bool, optional
+        """
         self.bus = bus
         self.log = logging.getLogger('AE')
 
@@ -157,12 +170,33 @@ class AE(applicationentity.AE):
 
     def get_file(self, context: fsm.PContextDef,
                  command_set: pydicom.Dataset) -> tuple[BinaryIO, int]:
+        """Requests a file object to store the incoming dataset.
+
+        :param context: presentation context
+        :type context: fsm.PContextDef
+        :param command_set: command dataset of the received message
+        :type command_set: pydicom.Dataset
+        :return: file object and the dataset stream start position
+        :rtype: tuple
+        """
         return self.bus.send_one(
             events.GetFile, events.GetFilePayload(context, command_set)
         )
 
     def on_association_request(self, asce: asceprovider.AssociationAcceptor,
                                assoc: pdu.AAssociateRqPDU) -> None:
+        """Handles incoming association requests.
+
+        Requests with an unknown called AE title are rejected; accepted
+        requests are broadcast as :class:`~tiny_pacs.events.Assoc` events.
+
+        :param asce: association acceptor
+        :type asce: asceprovider.AssociationAcceptor
+        :param assoc: association request parameters
+        :type assoc: pdu.AAssociateRqPDU
+        :raises exceptions.AssociationRejectedError: raised when the called
+                AE title is not valid for this AE
+        """
         called_ae_title = assoc.called_ae_title.strip()
         calling_ae_title = assoc.calling_ae_title.strip()
         if called_ae_title not in self.valid_aet:
@@ -218,6 +252,21 @@ class AE(applicationentity.AE):
 
     def on_receive_store(self, context: fsm.PContextDef,
                          ds: BinaryIO | bytes) -> statuses.Status:
+        """Handles C-STORE requests.
+
+        Raw dataset bytes are wrapped in a file object; the dataset is then
+        broadcast as a :class:`~tiny_pacs.events.Store` event. The first
+        non-success handler status is returned to the peer.
+
+        :param context: presentation context
+        :type context: fsm.PContextDef
+        :param ds: incoming dataset as a file object or raw bytes
+        :type ds: BinaryIO or bytes
+        :return: C-STORE status
+        :rtype: statuses.Status
+        :raises exceptions.EventHandlingError: raised if event handling
+                fails
+        """
         self.log.info('Received C-STORE %r', context)
         if isinstance(ds, bytes):
             # Dataset arrives as raw bytes when its SOP Class UID is not in
@@ -253,6 +302,19 @@ class AE(applicationentity.AE):
     def on_receive_find(
             self, context: fsm.PContextDef, ds: pydicom.Dataset
     ) -> Iterator[tuple[pydicom.Dataset, statuses.Status]]:
+        """Handles C-FIND requests.
+
+        Broadcasts a :class:`~tiny_pacs.events.Find` event and yields the
+        results of all handlers.
+
+        :param context: presentation context
+        :type context: fsm.PContextDef
+        :param ds: C-FIND request dataset
+        :type ds: pydicom.Dataset
+        :yield: tuples of result dataset and status
+        :raises exceptions.EventHandlingError: raised if event handling
+                fails
+        """
         self.log.info('Received C-FIND %r', context)
         if self.dump_ds:
             self.log.debug('C-FIND dataset %r', ds)
@@ -273,6 +335,24 @@ class AE(applicationentity.AE):
             destination: str
     ) -> tuple[asceprovider.RemoteAEConfig, int,
                Iterator[events.StoredFile]]:
+        """Handles C-MOVE requests.
+
+        Resolves the destination AE title via
+        :class:`~tiny_pacs.events.DeviceByAE` and broadcasts a
+        :class:`~tiny_pacs.events.Move` event; the resulting stored files
+        are forwarded to the C-MOVE implementation.
+
+        :param context: presentation context
+        :type context: fsm.PContextDef
+        :param ds: C-MOVE request dataset
+        :type ds: pydicom.Dataset
+        :param destination: move destination AE title
+        :type destination: str
+        :return: destination AE configuration, number of files and the
+                stored files
+        :raises exceptions.EventHandlingError: raised when the destination
+                is unknown or event handling fails
+        """
         self.log.info('Received C-MOVE to %s (%r)', destination, context)
         if self.dump_ds:
             self.log.debug('C-MOVE dataset %r', ds)
@@ -330,6 +410,21 @@ class AE(applicationentity.AE):
     ) -> tuple[asceprovider.RemoteAEConfig,
                list[tuple[uid.UID, uid.UID]],
                list[tuple[uid.UID, uid.UID, int]]]:
+        """Handles Storage Commitment requests.
+
+        Broadcasts a :class:`~tiny_pacs.events.Commitment` event; missing
+        instances are reported with the ``no such object instance`` failure
+        reason.
+
+        :param remote_ae: AE title the commitment report is sent to
+        :type remote_ae: str
+        :param uids: SOP Class / SOP Instance UID tuples to verify
+        :type uids: Iterable[tuple[uid.UID, uid.UID]]
+        :return: destination AE configuration, committed instances and
+                failures with their failure reason
+        :raises exceptions.EventHandlingError: raised when the destination
+                is unknown or event handling fails
+        """
         self.log.info('Received Storage Commitment request for %s', remote_ae)
         self.log.debug('Storage Commitment uids %r', uids)
 

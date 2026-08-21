@@ -109,6 +109,16 @@ class Component(trolleybus.EmitterMixin, Generic[TConfig]):
     def __init__(
             self, bus: trolleybus.EventBus, config: TConfig | dict[str, Any]
     ):
+        """Initializes the component.
+
+        Plain dict configurations are validated against
+        :attr:`config_model`. Subscribes to the bus lifecycle events.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: TConfig or dict
+        """
         super().__init__(bus)
         model_cls = type(self).config_model
         if isinstance(config, model_cls):
