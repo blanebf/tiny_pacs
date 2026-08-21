@@ -69,31 +69,54 @@ For development, with `Poetry <https://python-poetry.org/>`_:
 Quick start
 -----------
 
+The CLI provides two commands: ``run`` starts the server and ``config``
+generates a configuration file. Running ``tiny-pacs`` without a command is
+equivalent to ``tiny-pacs run``, so the traditional invocation keeps working.
+
 Start the server with the built-in defaults — AE title ``TINY_PACS``, port
 ``11112``, an in-memory SQLite database and in-memory storage:
 
 .. code-block:: bash
 
-    tiny-pacs
+    tiny-pacs run
 
 Override the AE title and/or the port from the command line:
 
 .. code-block:: bash
 
-    tiny-pacs -a MY_PACS -p 4242
+    tiny-pacs run -a MY_PACS -p 4242
 
 Load configuration from a file (YAML by extension, JSON for ``*.json``):
 
 .. code-block:: bash
 
-    tiny-pacs -c config.yaml
+    tiny-pacs run -c config.yaml
 
-Or configure everything interactively; the wizard offers to save the resulting
-configuration to a file before starting the server:
+Generate a YAML configuration file filled with the default values — either
+print it to stdout or write it to a file:
 
 .. code-block:: bash
 
-    tiny-pacs -i
+    tiny-pacs config
+    tiny-pacs config -o config.yaml
+
+Run either command in interactive mode: the wizard asks for every
+configuration value; with ``config`` the result is written to ``--output``
+(or printed to stdout), with ``run`` it is merged into the server
+configuration and the wizard offers to save it to a file before starting
+the server:
+
+.. code-block:: bash
+
+    tiny-pacs config -i -o config.yaml
+    tiny-pacs run -i
+
+Each command describes its options in its help:
+
+.. code-block:: bash
+
+    tiny-pacs run --help
+    tiny-pacs config --help
 
 Configuration
 -------------

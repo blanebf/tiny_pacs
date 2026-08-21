@@ -283,3 +283,36 @@ class Config(pydantic.BaseModel):
     def _read_json(file_name: str) -> Any:
         with open(file_name) as fp:
             return json.load(fp)
+
+
+def dump_yaml(conf: Config) -> str:
+    """Serializes a configuration into a YAML document.
+
+    The output contains the effective configuration with all the default
+    values applied, so it can be saved to a file and loaded back either
+    with :meth:`Config.update_config` or via the ``-c`` command-line
+    option.
+
+    :param conf: configuration to serialize
+    :type conf: Config
+    :return: YAML representation of the configuration
+    :rtype: str
+    """
+    text: str = yaml.safe_dump(conf.model_dump(), sort_keys=False, default_flow_style=False)
+    return text
+
+
+def write_yaml(conf: Config, file_name: str) -> None:
+    """Writes a configuration to a file readable only by its owner.
+
+    Configurations may contain credentials (e.g. the PostgreSQL password),
+    so the file is created with mode ``0600``.
+
+    :param conf: configuration to serialize
+    :type conf: Config
+    :param file_name: name of the file to write
+    :type file_name: str
+    """
+    fd = os.open(file_name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as fp:
+        fp.write(dump_yaml(conf))

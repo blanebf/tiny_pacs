@@ -185,6 +185,29 @@ class InteractiveFront:
         )
 
     def run(self) -> tuple[dict[str, Any], bool]:
+        """Runs the full configuration wizard.
+
+        Asks every configuration question, optionally saves the resulting
+        configuration to a file and finally asks whether the server should
+        be started.
+
+        :return: collected configuration and whether the server should start
+        """
+        _config = self.run_questionnairies()
+        self.save_config.value = self.request_value(self.save_config, False)
+        if self.save_config.value:
+            self.config_filename.value = self.request_value(
+                self.config_filename, False
+            )
+            self.save_config_to_file(_config, self.config_filename.value)
+        self.start_server.value = self.request_value(self.start_server, False)
+        return _config, self.start_server.value
+
+    def run_questionnairies(self) -> dict[str, Any]:
+        """Runs all the questionnaires without the save/start questions.
+
+        :return: collected configuration
+        """
         _config: dict[str, Any] = {}
         for questionnaire in self.questionnairies:
             for question in questionnaire:
@@ -198,13 +221,17 @@ class InteractiveFront:
                     value = self.request_value(question, False)
                     question.value = value
             _config[questionnaire.key] = questionnaire.value()
-        self.save_config.value = self.request_value(self.save_config, False)
-        if self.save_config.value:
-            self.config_filename.value = self.request_value(
-                self.config_filename, False
-            )
-        self.start_server.value = self.request_value(self.start_server, False)
-        return _config, self.start_server.value
+        return _config
+
+    def save_config_to_file(self, _config: dict[str, Any], file_name: str) -> None:
+        """Saves the collected configuration merged with the defaults.
+
+        :param _config: configuration collected from the questionnaires
+        :param file_name: name of the file to write the YAML configuration to
+        """
+        conf = config.Config()
+        conf.update_config(_config)
+        config.write_yaml(conf, file_name)
 
     def request_value(self, question: Question, repeatable: bool) -> str:
         raise NotImplementedError()
