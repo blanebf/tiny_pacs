@@ -41,7 +41,8 @@ class DeviceConfig(pydantic.BaseModel):
         :rtype: asceprovider.RemoteAEConfig
         """
         accepted = {
-            field.name for field in dataclasses.fields(asceprovider.RemoteAEConfig)
+            field.name
+            for field in dataclasses.fields(asceprovider.RemoteAEConfig)
         } - {'user_data'}
         kwargs = {
             key: value

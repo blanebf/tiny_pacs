@@ -128,8 +128,8 @@ class PACS(component.Component[PACSConfig]):
             self.broadcast(events.StoreDone, ds)
             return statuses.SUCCESS
 
-    def on_find(self, payload: events.FindPayload) -> Iterator[tuple[pydicom.Dataset,
-                                                                     statuses.Status]]:
+    def on_find(self, payload: events.FindPayload
+                ) -> Iterator[tuple[pydicom.Dataset, statuses.Status]]:
         """Handling of incoming find request
 
         :param payload: presentation context and incoming dataset
@@ -151,8 +151,11 @@ class PACS(component.Component[PACSConfig]):
         :rtype: list
         """
         destination = payload.destination
-        self.log_info('Handling move request to %s (%r)', destination, payload.context)
-        instances = [uid for _, _, uid in self.c_move_get_instances(payload.ds)]
+        self.log_info('Handling move request to %s (%r)', destination,
+                      payload.context)
+        instances = [
+            uid for _, _, uid in self.c_move_get_instances(payload.ds)
+        ]
         self.log_debug('Moving instances: %r', instances)
         results = self.broadcast(events.GetFiles, instances)
         return list(chain.from_iterable(results))
@@ -167,7 +170,9 @@ class PACS(component.Component[PACSConfig]):
         :rtype: list
         """
         self.log_info('Handling get request (%r)', payload.context)
-        instances = [uid for _, _, uid in self.c_move_get_instances(payload.ds)]
+        instances = [
+            uid for _, _, uid in self.c_move_get_instances(payload.ds)
+        ]
         self.log_debug('Getting instances: %r', instances)
         results = self.broadcast(events.GetFiles, instances)
         return list(chain.from_iterable(results))
@@ -223,7 +228,8 @@ class PACS(component.Component[PACSConfig]):
             series = self.series_api.c_store(study, ds)
             self.instance_api.c_store(series, ds)
 
-    def c_move_get_instances(self, ds: pydicom.Dataset) -> Iterator[tuple[str, str, str]]:
+    def c_move_get_instances(self, ds: pydicom.Dataset
+                             ) -> Iterator[tuple[str, str, str]]:
         """Gets instances for C-MOVE request
 
         :param ds: incoming dataset
@@ -262,15 +268,21 @@ class PACS(component.Component[PACSConfig]):
             series_uids = ds.SeriesInstanceUID
             if not isinstance(series_uids, list):
                 series_uids = [series_uids]
-            query = query.where(models.Series.series_instance_uid << series_uids)
+            query = query.where(
+                models.Series.series_instance_uid << series_uids
+            )
 
         if level == QRLevelRank.IMAGE:
             sop_instance_uids = ds.SOPInstanceUID
             if not isinstance(sop_instance_uids, list):
                 sop_instance_uids = [sop_instance_uids]
-            query = query.where(models.Instance.sop_instance_uid << sop_instance_uids)
+            query = query.where(
+                models.Instance.sop_instance_uid << sop_instance_uids
+            )
 
         for instance in query:
             series = instance.series
             study = series.study
-            yield (study.study_instance_uid, series.series_instance_uid, instance.sop_instance_uid)
+            yield (study.study_instance_uid,
+                   series.series_instance_uid,
+                   instance.sop_instance_uid)

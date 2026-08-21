@@ -1,9 +1,10 @@
 """Configuration system.
 
-Tiny PACS configuration is described with `pydantic <https://docs.pydantic.dev>`_
-models: the top-level :class:`Config` holds the AE settings, the logging
-configuration and the per-component configurations. Every component declares
-its own configuration model via
+Tiny PACS configuration is described with
+`pydantic <https://docs.pydantic.dev>`_ models: the top-level
+:class:`Config` holds the AE settings, the logging configuration and the
+per-component configurations. Every component declares its own
+configuration model via
 :attr:`~tiny_pacs.component.Component.config_model`, and the config loader
 validates the raw component configuration against that model at load time.
 """
@@ -46,7 +47,7 @@ DEFAULT_SUPPORTED_TS: list[uid.UID] = [
     uids.JPEG_BASELINE_PROCESS_1,
     uids.JPEG_EXTENDED_PROCESS_2_AND_4,
     uids.JPEG_LOSSLESS_NON_HIERARCHICAL_PROCESS_14,
-    uids.JPEG_LOSSLESS_NON_HIERARCHICAL_FIRST_ORDER_PREDICTION_PROCESS_14_SELECTION_VALUE_1,
+    uids.JPEG_LOSSLESS_NON_HIERARCHICAL_FIRST_ORDER_PREDICTION_PROCESS_14_SELECTION_VALUE_1,  # noqa: E501
     uids.JPEG_LS_LOSSLESS_IMAGE_COMPRESSION,
     uids.JPEG_LS_LOSSY_NEAR_LOSSLESS_IMAGE_COMPRESSION,
     uids.JPEG_2000_IMAGE_COMPRESSION_LOSSLESS_ONLY,
@@ -78,12 +79,15 @@ class AEConfig(pydantic.BaseModel):
     :ivar max_pdu_length: maximum PDU length in bytes
     :ivar dump_ds: dump datasets and association PDUs to the log
     :ivar supported_ts: list of supported transfer syntax UIDs
-    :ivar tls: TLS settings; all incoming connections are wrapped in TLS when given
+    :ivar tls: TLS settings; all incoming connections are wrapped in TLS
+        when given
     """
 
     model_config = pydantic.ConfigDict(extra='forbid')
 
-    ae_title: str | list[str] = pydantic.Field(default_factory=lambda: ['TINY_PACS'])
+    ae_title: str | list[str] = pydantic.Field(
+        default_factory=lambda: ['TINY_PACS']
+    )
     port: int = 11112
     max_pdu_length: int = 65536
     dump_ds: bool = True
@@ -103,7 +107,9 @@ COMPONENT_REGISTRY: dict[str, type[component.Component[Any]]] = {
 }
 
 
-def register_component(name: str, factory: type[component.Component[Any]]) -> None:
+def register_component(
+        name: str, factory: type[component.Component[Any]]
+) -> None:
     """Registers a component class and its configuration model.
 
     Registered components become available in the ``components`` config
@@ -130,7 +136,8 @@ DEFAULT_LOG_CONF = {
     'version': 1,
     'formatters': {
         'simple': {
-            'format': '%(asctime)s - %(levelname)-8s - %(name)-15s - %(message)s'
+            'format': ('%(asctime)s - %(levelname)-8s - '
+                       '%(name)-15s - %(message)s')
         }
     },
     'handlers': {
@@ -177,7 +184,10 @@ def _validate_component_configs(
     if not value:
         return result
     if not isinstance(value, dict):
-        raise ValueError('"components" must be a mapping of component name to its configuration')
+        raise ValueError(
+            '"components" must be a mapping of component name to its '
+            'configuration'
+        )
     logger = logging.getLogger('tiny_pacs.config')
     for name, data in value.items():
         factory = COMPONENT_REGISTRY.get(name)
@@ -191,7 +201,9 @@ def _validate_component_configs(
         if data is None:
             data = {}
         if not isinstance(data, dict):
-            raise ValueError(f'Configuration for component {name} must be a mapping')
+            raise ValueError(
+                f'Configuration for component {name} must be a mapping'
+            )
         result[name] = model_cls.model_validate(data)
     return result
 
@@ -205,7 +217,8 @@ class Config(pydantic.BaseModel):
     :attr:`~tiny_pacs.component.Component.config_model`.
 
     :ivar ae: application entity configuration
-    :ivar log: logging configuration, passed to :func:`logging.config.dictConfig`
+    :ivar log: logging configuration, passed to
+        :func:`logging.config.dictConfig`
     :ivar components: effective component configurations. Components that are
                       never configured fall back to
                       :data:`DEFAULT_COMPONENTS`; a component that is
@@ -264,7 +277,9 @@ class Config(pydantic.BaseModel):
             return
         ae_conf = data.get('ae')
         if ae_conf:
-            self.ae = AEConfig.model_validate({**self.ae.model_dump(), **ae_conf})
+            self.ae = AEConfig.model_validate(
+                {**self.ae.model_dump(), **ae_conf}
+            )
         log_conf = data.get('log')
         if log_conf:
             self.log = {**self.log, **log_conf}
@@ -298,7 +313,9 @@ def dump_yaml(conf: Config) -> str:
     :return: YAML representation of the configuration
     :rtype: str
     """
-    text: str = yaml.safe_dump(conf.model_dump(), sort_keys=False, default_flow_style=False)
+    text: str = yaml.safe_dump(
+        conf.model_dump(), sort_keys=False, default_flow_style=False
+    )
     return text
 
 

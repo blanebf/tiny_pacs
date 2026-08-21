@@ -196,10 +196,14 @@ class Instance(peewee.Model):
     sop_class_uid = peewee.CharField(max_length=64, index=True, null=True)
 
     #: Container Identifier (0040, 0512) LO
-    container_identifier = peewee.CharField(max_length=64, index=True, null=True)
+    container_identifier = peewee.CharField(
+        max_length=64, index=True, null=True
+    )
 
     # Transfer Syntax UID (0002, 0010) UI
-    transfer_syntax_uid = peewee.CharField(max_length=64, index=True, null=True)
+    transfer_syntax_uid = peewee.CharField(
+        max_length=64, index=True, null=True
+    )
 
     # Available Transfer Syntax UID (0008,3002)
     # Related General SOP Class UID (0008,001A)

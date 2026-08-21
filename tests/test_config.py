@@ -47,7 +47,8 @@ def test_default_config_validates_and_typing() -> None:
     assert isinstance(conf.components['Database'], db.DatabaseConfig)
     assert isinstance(conf.components['Devices'], devices.DevicesConfig)
     assert isinstance(conf.components['PACS'], pacs.PACSConfig)
-    assert isinstance(conf.components['InMemoryStorage'], component.ComponentConfig)
+    assert isinstance(conf.components['InMemoryStorage'],
+                      component.ComponentConfig)
     assert all(c.on for c in conf.components.values())
 
 
@@ -77,7 +78,8 @@ def test_entry_without_on_is_disabled() -> None:
     # Components are skipped unless ``on`` is true: configuring a component
     # without an explicit ``on: true`` must not enable it.
     conf = config.Config()
-    conf.update_config({'components': {'FileStorage': {'storage_dir': '/tmp'}}})
+    conf.update_config(
+        {'components': {'FileStorage': {'storage_dir': '/tmp'}}})
     assert conf.components['FileStorage'].on is False
     assert conf.components['Database'].on is True  # untouched default
 
@@ -95,7 +97,8 @@ def test_component_entry_replaced_wholesale() -> None:
             }
         }
     })
-    conf.update_config({'components': {'Database': {'on': True, 'driver': 'sqlite'}}})
+    conf.update_config(
+        {'components': {'Database': {'on': True, 'driver': 'sqlite'}}})
     db_conf = conf.components['Database']
     assert isinstance(db_conf, db.DatabaseConfig)
     assert db_conf.driver is db.DBDrivers.SQLITE
@@ -107,7 +110,8 @@ def test_component_config_validated_into_typed_model() -> None:
     conf = config.Config()
     conf.update_config({
         'components': {
-            'Database': {'on': True, 'driver': 'sqlite', 'db_name': ':memory:'},
+            'Database': {'on': True, 'driver': 'sqlite',
+                         'db_name': ':memory:'},
             'Devices': {'on': True, 'default_port': 11113,
                         'devices': {'WS': {'aet': 'WS', 'address': '127.0.0.1',
                                            'port': 11113}}}
@@ -168,7 +172,8 @@ def test_register_component() -> None:
     config.register_component('_ExtraComponent', _ExtraComponent)
     try:
         conf = config.Config()
-        conf.update_config({'components': {'_ExtraComponent': {'option': 'y'}}})
+        conf.update_config(
+            {'components': {'_ExtraComponent': {'option': 'y'}}})
         extra = conf.components['_ExtraComponent']
         assert isinstance(extra, _ExtraConfig)
         assert extra.option == 'y'

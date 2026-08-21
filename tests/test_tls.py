@@ -23,7 +23,9 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(scope='module')
-def tls_cert(tmp_path_factory: pytest.TempPathFactory) -> tuple[pathlib.Path, pathlib.Path]:
+def tls_cert(
+        tmp_path_factory: pytest.TempPathFactory
+) -> tuple[pathlib.Path, pathlib.Path]:
     tmp = tmp_path_factory.mktemp('tls')
     cert = tmp / 'cert.pem'
     key = tmp / 'key.pem'
@@ -37,7 +39,9 @@ def tls_cert(tmp_path_factory: pytest.TempPathFactory) -> tuple[pathlib.Path, pa
 
 
 @pytest.fixture
-def tls_pacs(tls_cert: tuple[pathlib.Path, pathlib.Path]) -> Iterator[server.Server]:
+def tls_pacs(
+        tls_cert: tuple[pathlib.Path, pathlib.Path]
+) -> Iterator[server.Server]:
     cert, key = tls_cert
     conf = config.Config()
     conf.update_config({
@@ -79,9 +83,9 @@ def test_tls_echo(tls_pacs: server.Server,
     assert _tls_echo(port, cert)
 
 
-def test_tls_failed_handshake_does_not_block_server(tls_pacs: server.Server,
-                                                    tls_cert: tuple[pathlib.Path,
-                                                                    pathlib.Path]) -> None:
+def test_tls_failed_handshake_does_not_block_server(
+        tls_pacs: server.Server,
+        tls_cert: tuple[pathlib.Path, pathlib.Path]) -> None:
     cert, _ = tls_cert
     assert tls_pacs.ae is not None
     port = tls_pacs.ae.server.server_address[1]

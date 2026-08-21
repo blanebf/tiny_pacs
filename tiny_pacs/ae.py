@@ -15,7 +15,15 @@ from typing import Any, BinaryIO
 import pydicom
 import trolleybus
 from pydicom import uid
-from pynetdicom2 import applicationentity, asceprovider, exceptions, fsm, pdu, sopclass, statuses
+from pynetdicom2 import (
+    applicationentity,
+    asceprovider,
+    exceptions,
+    fsm,
+    pdu,
+    sopclass,
+    statuses,
+)
 
 from . import events, services
 from .config import AEConfig, TLSConfig
@@ -56,13 +64,15 @@ class _TLSThreadingTCPServer(socketserver.ThreadingTCPServer):
                  server_address: tuple[str, int],
                  RequestHandlerClass: Any,
                  bind_and_activate: bool = True):
-        super().__init__(server_address, RequestHandlerClass, bind_and_activate)
+        super().__init__(server_address, RequestHandlerClass,
+                         bind_and_activate)
         self.context = context
 
     # The supertype also allows datagram ``(bytes, socket)`` requests; a TLS
     # server only ever receives stream sockets.
-    def process_request_thread(self, request: socket.socket,  # type: ignore[override]
-                               client_address: tuple[str, int]) -> None:
+    def process_request_thread(  # type: ignore[override]
+            self, request: socket.socket,
+            client_address: tuple[str, int]) -> None:
         try:
             request.settimeout(self.handshake_timeout)
             request = self.context.wrap_socket(request, server_side=True)
@@ -123,9 +133,10 @@ class AE(applicationentity.AE):
         if self.ssl_context is None:
             return super()._create_server(port, bind_and_activate,
                                           max_pdu_length)
-        # ``local_ae`` is typed against ``AEBaseProto`` whose ``on_receive_move``
-        # yields plain datasets; tiny_pacs intentionally yields stored-file tuples
-        # instead (see the ``on_receive_move`` override below).
+        # ``local_ae`` is typed against ``AEBaseProto`` whose
+        # ``on_receive_move`` yields plain datasets; tiny_pacs intentionally
+        # yields stored-file tuples instead (see the ``on_receive_move``
+        # override below).
         return _TLSThreadingTCPServer(
             self.ssl_context, ('', port),
             functools.partial(

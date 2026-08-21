@@ -55,7 +55,8 @@ class StorageBase(component.Component[TConfig]):
 
     Provides basic storage functionality, common for all storage components.
     """
-    def __init__(self, bus: trolleybus.EventBus, config: TConfig | dict[str, Any]):
+    def __init__(self, bus: trolleybus.EventBus,
+                 config: TConfig | dict[str, Any]):
         super().__init__(bus, config)
 
         self.subscribe(events.GetFile, self.on_get_file)
@@ -80,7 +81,8 @@ class StorageBase(component.Component[TConfig]):
         """
         return self.send_one(events.Atomic, None)
 
-    def on_get_file(self, payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+    def on_get_file(self,
+                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
         """Handles `GetFile` event from AE
 
         :param payload: presentation context and command Dataset
@@ -106,7 +108,9 @@ class StorageBase(component.Component[TConfig]):
         """
         raise NotImplementedError()
 
-    def on_store_get_files(self, sop_instance_uids: list[str]) -> Iterable[events.StoredFile]:
+    def on_store_get_files(self,
+                           sop_instance_uids: list[str]
+                           ) -> Iterable[events.StoredFile]:
         """Handles `GetFiles` event
 
         :param sop_instance_uids: list of SOP Instance UIDs
@@ -116,7 +120,8 @@ class StorageBase(component.Component[TConfig]):
         raise NotImplementedError()
 
     def new_file(self, sop_instance_uid: str, sop_class_uid: str,
-                 transfer_syntax: str | uid.UID, file_name: str) -> StorageFiles:
+                 transfer_syntax: str | uid.UID, file_name: str
+                 ) -> StorageFiles:
         """Adds new file record to the database
 
         :param sop_instance_uid: file SOP Instance UID
@@ -158,10 +163,13 @@ class StorageBase(component.Component[TConfig]):
         :type sop_instance_uid: str
         """
         with self.atomic():
-            stored_file = StorageFiles.get(StorageFiles.sop_instance_uid == sop_instance_uid)
+            stored_file = StorageFiles.get(
+                StorageFiles.sop_instance_uid == sop_instance_uid
+            )
             stored_file.is_stored = True
             stored_file.save()
-        self.log_info('Successfully stored file in DB, SOP Instance UID: %s', sop_instance_uid)
+        self.log_info('Successfully stored file in DB, SOP Instance UID: %s',
+                      sop_instance_uid)
 
     def remove_file(self, sop_instance_uid: str) -> str:
         """Remove file record from database with specific SOP Instance UID
@@ -172,14 +180,19 @@ class StorageBase(component.Component[TConfig]):
         :rtype: str
         """
         with self.atomic():
-            stored_file = StorageFiles.get(StorageFiles.sop_instance_uid == sop_instance_uid)
+            stored_file = StorageFiles.get(
+                StorageFiles.sop_instance_uid == sop_instance_uid
+            )
             file_name = stored_file.file_name
             stored_file.delete_instance()
-        self.log_info('Removed stored file from DB, SOP Instance UID: %s', sop_instance_uid)
+        self.log_info('Removed stored file from DB, SOP Instance UID: %s',
+                      sop_instance_uid)
         return file_name
 
-    def verify(self, instances: list[tuple[uid.UID, uid.UID]]) -> tuple[frozenset, frozenset]:
-        """Verify that provided list of SOP Instnace UIDs are successfully stored
+    def verify(self, instances: list[tuple[uid.UID, uid.UID]]
+               ) -> tuple[frozenset, frozenset]:
+        """Verify that provided list of SOP Instnace UIDs are successfully
+        stored
 
         :param instances: list of tuples (SOP Class UID, SOP Instance UID)
         :type instances: list
@@ -189,7 +202,9 @@ class StorageBase(component.Component[TConfig]):
         self.log_debug('Verifying instances: %r', instances)
         sop_instance_uids = [i for _, i in instances]
         query = self.find_files(sop_instance_uids)
-        stored_instances = frozenset((r.sop_class_uid, r.sop_instance_uid) for r in query)
+        stored_instances = frozenset(
+            (r.sop_class_uid, r.sop_instance_uid) for r in query
+        )
         _instances = frozenset(instances)
         success = _instances & stored_instances
         failure = _instances - stored_instances
@@ -198,7 +213,8 @@ class StorageBase(component.Component[TConfig]):
         return success, failure
 
     def find_files(self,
-                   sop_instance_uids: Sequence[str]) -> 'peewee.ModelSelect[StorageFiles]':
+                   sop_instance_uids: Sequence[str]
+                   ) -> 'peewee.ModelSelect[StorageFiles]':
         """Find stored files based on a list of SOP Instance UIDs
 
         :param sop_instance_uids: list of SOP Instance UIDs
@@ -272,7 +288,8 @@ class FileStorage(StorageBase[FileStorageConfig],
             )
         ])
 
-    def on_get_file(self, payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+    def on_get_file(self,
+                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
         command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
@@ -296,11 +313,14 @@ class FileStorage(StorageBase[FileStorageConfig],
         file_name = os.path.join(self.storage_dir, file_name)
         self.remove_nothrow(file_name)
 
-    def on_store_get_files(self, sop_instance_uids: list[str]) -> Iterable[events.StoredFile]:
+    def on_store_get_files(self,
+                           sop_instance_uids: list[str]
+                           ) -> Iterable[events.StoredFile]:
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             file_name = os.path.join(self.storage_dir, file_record.file_name)
-            yield file_record.sop_class_uid, file_record.transfer_syntax, file_name
+            yield (file_record.sop_class_uid,
+                   file_record.transfer_syntax, file_name)
 
     def get_folder_path(self) -> str:
         """Return full path for storing an incoming file
@@ -320,7 +340,8 @@ class FileStorage(StorageBase[FileStorageConfig],
             shutil.rmtree(self.storage_dir)
         except Exception as error:
             self.log_exception(
-                f'Failed to cleanup storage directory {self.storage_dir}: {error}'
+                f'Failed to cleanup storage directory {self.storage_dir}: '
+                f'{error}'
             )
 
 
@@ -336,7 +357,8 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         self._temp_files: dict[str, tuple[BinaryIO, int]] = {}
         self._stored_files: dict[str, pydicom.Dataset] = {}
 
-    def on_get_file(self, payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+    def on_get_file(self,
+                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
         command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
@@ -364,7 +386,9 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         except KeyError:
             pass
 
-    def on_store_get_files(self, sop_instance_uids: list[str]) -> Iterable[events.StoredFile]:
+    def on_store_get_files(self,
+                           sop_instance_uids: list[str]
+                           ) -> Iterable[events.StoredFile]:
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             ds = self._stored_files[file_record.sop_instance_uid]
@@ -382,7 +406,8 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
         super().__init__(bus, config)
         self._temp_files: set[str] = set()
 
-    def on_get_file(self, payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+    def on_get_file(self,
+                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
         command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
@@ -403,11 +428,14 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
         self.remove_nothrow(file_name)
         self._temp_files.remove(file_name)
 
-    def on_store_get_files(self, sop_instance_uids: list[str]) -> Iterable[events.StoredFile]:
+    def on_store_get_files(self,
+                           sop_instance_uids: list[str]
+                           ) -> Iterable[events.StoredFile]:
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             file_name = file_record.file_name
-            yield file_record.sop_class_uid, file_record.transfer_syntax, file_name
+            yield (file_record.sop_class_uid,
+                   file_record.transfer_syntax, file_name)
 
     def on_exit(self) -> None:
         super().on_exit()

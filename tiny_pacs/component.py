@@ -38,7 +38,8 @@ class ComponentConfig(pydantic.BaseModel):
         # ``{True: True}`` — rewrite the boolean keys back to the ``on``
         # flag. A bare ``off:`` key is parsed as ``False`` and means the
         # negation of ``on``.
-        if not isinstance(data, dict) or (True not in data and False not in data):
+        if (not isinstance(data, dict)
+                or (True not in data and False not in data)):
             return data
         result: dict[Any, Any] = {}
         for key, value in data.items():
@@ -65,8 +66,9 @@ class Component(trolleybus.EmitterMixin, Generic[TConfig]):
     ``send_any``) are provided by :class:`trolleybus.EmitterMixin`.
 
     Unlike :class:`trolleybus.Subscriber`, component handlers are attached
-    immediately on construction instead of on :meth:`trolleybus.EventBus.start`.
-    This preserves two semantics tiny_pacs relies on:
+    immediately on construction instead of on
+    :meth:`trolleybus.EventBus.start`. This preserves two semantics
+    tiny_pacs relies on:
 
         * components override each other's handler methods freely (a deferred
           attach scheme would require re-decorating every override);
@@ -104,7 +106,9 @@ class Component(trolleybus.EmitterMixin, Generic[TConfig]):
         """
         return cls.__name__
 
-    def __init__(self, bus: trolleybus.EventBus, config: TConfig | dict[str, Any]):
+    def __init__(
+            self, bus: trolleybus.EventBus, config: TConfig | dict[str, Any]
+    ):
         super().__init__(bus)
         model_cls = type(self).config_model
         if isinstance(config, model_cls):
@@ -166,7 +170,9 @@ class Component(trolleybus.EmitterMixin, Generic[TConfig]):
             priority = self.priority
         return self.bus.subscribe(event, callback, priority)
 
-    def log(self, level: int, msg: object, *args: object, **kwargs: Any) -> None:
+    def log(
+            self, level: int, msg: object, *args: object, **kwargs: Any
+    ) -> None:
         """Logger wrapper
 
         :param level: logging level

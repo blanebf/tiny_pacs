@@ -18,7 +18,8 @@ def test_parse_args_defaults_to_run() -> None:
 
 
 def test_parse_args_legacy_invocation() -> None:
-    args = cli.parse_args(['-c', 'conf.yaml', '-a', 'MY_AE', '-p', '4242', '-i'])
+    args = cli.parse_args(['-c', 'conf.yaml', '-a', 'MY_AE', '-p', '4242',
+                           '-i'])
     assert args.command == 'run'
     assert args.config == ['conf.yaml']
     assert args.aet == 'MY_AE'
@@ -58,7 +59,8 @@ def test_dump_yaml_roundtrip() -> None:
     assert restored == conf
 
 
-def test_config_command_prints_defaults(capsys: pytest.CaptureFixture[str]) -> None:
+def test_config_command_prints_defaults(
+        capsys: pytest.CaptureFixture[str]) -> None:
     cli.config_command(cli.parse_args(['config']))
     data = yaml.safe_load(capsys.readouterr().out)
     default = config.Config()
@@ -76,7 +78,8 @@ def test_config_command_output_file(tmp_path: Path) -> None:
     assert out_file.stat().st_mode & 0o777 == 0o600
 
 
-def test_config_command_interactive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_config_command_interactive(tmp_path: Path,
+                                    monkeypatch: pytest.MonkeyPatch) -> None:
     inputs = ['MY_AE', '', '4242', '', 'Y', '', '',
               'N', 'N', 'N', 'N', 'N', 'N']
     monkeypatch.setattr('builtins.input', lambda prompt='': inputs.pop(0))
@@ -133,7 +136,8 @@ def test_main_legacy_invocation(monkeypatch: pytest.MonkeyPatch) -> None:
             pass
 
     monkeypatch.setattr(server, 'Server', FakeServer)
-    monkeypatch.setattr(sys, 'argv', ['tiny-pacs', '-a', 'MY_AE', '-p', '4242'])
+    monkeypatch.setattr(sys, 'argv',
+                        ['tiny-pacs', '-a', 'MY_AE', '-p', '4242'])
     cli.main()
     assert len(created) == 1
     assert created[0].ae.ae_title == ['MY_AE']

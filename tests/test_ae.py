@@ -27,17 +27,21 @@ def test_assoc(ae_title: ae.AE) -> None:
         assert payload.assoc.called_ae_title == 'TINY_PACS'
     ae_title.bus.subscribe(events.Assoc, callback)
     asce_rq = pdu.AAssociateRqPDU('TINY_PACS', 'TEST', [])
-    ae_title.on_association_request(cast(asceprovider.AssociationAcceptor, None), asce_rq)
+    ae_title.on_association_request(
+        cast(asceprovider.AssociationAcceptor, None), asce_rq)
 
 
 def test_find(ae_title: ae.AE) -> None:
-    def callback(payload: events.FindPayload) -> list[tuple[dataset.Dataset, statuses.Status]]:
+    def callback(
+            payload: events.FindPayload
+    ) -> list[tuple[dataset.Dataset, statuses.Status]]:
         assert ctx == payload.context
         assert ds == payload.ds
         return [(dataset.Dataset(), statuses.C_FIND_PENDING),
                 (dataset.Dataset(), statuses.C_FIND_PENDING)]
 
-    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_FIND_SOP_CLASS, ImplicitVRLittleEndian)
+    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_FIND_SOP_CLASS,
+                          ImplicitVRLittleEndian)
     ds = dataset.Dataset()
     ae_title.bus.subscribe(events.Find, callback)
     results = ae_title.on_receive_find(ctx, ds)
@@ -52,7 +56,8 @@ def test_store_success(ae_title: ae.AE) -> None:
         assert buf == payload.ds
         return statuses.SUCCESS
 
-    ctx = fsm.PContextDef(1, uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian)
+    ctx = fsm.PContextDef(1, uids.BASIC_TEXT_SR_STORAGE,
+                          ImplicitVRLittleEndian)
     buf = io.BytesIO(b'dataset stream')
     ae_title.bus.subscribe(events.Store, callback)
     status = ae_title.on_receive_store(ctx, buf)
@@ -65,7 +70,8 @@ def test_store_failure(ae_title: ae.AE) -> None:
         assert buf == payload.ds
         return statuses.C_MOVE_UNABLE_TO_PROCESS
 
-    ctx = fsm.PContextDef(1, uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian)
+    ctx = fsm.PContextDef(1, uids.BASIC_TEXT_SR_STORAGE,
+                          ImplicitVRLittleEndian)
     buf = io.BytesIO(b'dataset stream')
     ae_title.bus.subscribe(events.Store, callback)
     status = ae_title.on_receive_store(ctx, buf)
@@ -78,13 +84,16 @@ def test_move(ae_title: ae.AE) -> None:
         assert ctx == payload.context
         assert ds == payload.ds
         return [
-            (uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian, dataset.Dataset()),
-            (uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian, dataset.Dataset()),
+            (uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian,
+             dataset.Dataset()),
+            (uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian,
+             dataset.Dataset()),
         ]
 
-    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_MOVE_SOP_CLASS, ImplicitVRLittleEndian)
+    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_MOVE_SOP_CLASS,
+                          ImplicitVRLittleEndian)
     ds = dataset.Dataset()
-    _devices = devices.Devices(
+    devices.Devices(
         ae_title.bus,
         {
             'devices': {
@@ -106,17 +115,20 @@ def test_move(ae_title: ae.AE) -> None:
 def test_move_with_user_authentication(ae_title: ae.AE) -> None:
     def callback(payload: events.MovePayload) -> list[events.StoredFile]:
         return [
-            (uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian, dataset.Dataset()),
+            (uids.BASIC_TEXT_SR_STORAGE, ImplicitVRLittleEndian,
+             dataset.Dataset()),
         ]
 
-    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_MOVE_SOP_CLASS, ImplicitVRLittleEndian)
+    ctx = fsm.PContextDef(1, uids.STUDY_ROOT_MOVE_SOP_CLASS,
+                          ImplicitVRLittleEndian)
     ds = dataset.Dataset()
     devices.Devices(
         ae_title.bus,
         {
             'devices': {
                 'REMOTE_PACS': {
-                    'address': '127.0.0.1', 'port': 11112, 'aet': 'REMOTE_PACS',
+                    'address': '127.0.0.1', 'port': 11112,
+                    'aet': 'REMOTE_PACS',
                     'username': 'dicom_user', 'password': 'secret'
                 }
             }
@@ -138,7 +150,8 @@ def test_tls_invalid_config(tls_config: object) -> None:
 
 
 def test_echo(ae_title: ae.AE) -> None:
-    ctx = fsm.PContextDef(1, uids.VERIFICATION_SOP_CLASS, ImplicitVRLittleEndian)
+    ctx = fsm.PContextDef(1, uids.VERIFICATION_SOP_CLASS,
+                          ImplicitVRLittleEndian)
     status = ae_title.on_receive_echo(ctx)
     assert status.is_success
 
@@ -167,7 +180,8 @@ def test_client_with_user_authentication(ae_title: ae.AE) -> None:
         {
             'devices': {
                 'REMOTE_PACS': {
-                    'address': '127.0.0.1', 'port': 11112, 'aet': 'REMOTE_PACS',
+                    'address': '127.0.0.1', 'port': 11112,
+                    'aet': 'REMOTE_PACS',
                     'username': 'dicom_user', 'password': 'secret'
                 }
             }

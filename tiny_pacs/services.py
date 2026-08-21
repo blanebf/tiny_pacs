@@ -28,7 +28,8 @@ if TYPE_CHECKING:
 
 def _send_ops_response(asce: asceprovider.AssociationAcceptor,
                        ctx: fsm.PContextDef,
-                       msg: dimsemessages.CMoveRQMessage | dimsemessages.CGetRQMessage,
+                       msg: dimsemessages.CMoveRQMessage
+                       | dimsemessages.CGetRQMessage,
                        _status: statuses.Status,
                        nop: int, failed: int, warning: int,
                        completed: int) -> None:
@@ -186,7 +187,8 @@ def qr_get_scp(asce: asceprovider.AssociationAcceptor,
                 ts = context.supported_ts
                 break
         else:
-            err_msg = f'SOP Class UID {sop_class} or Transfer Syntax is not supported {ts}'
+            err_msg = (f'SOP Class UID {sop_class} or Transfer Syntax '
+                       f'is not supported {ts}')
             raise exceptions.NetDICOMError(err_msg)
         # C-GET sends C-STORE sub-operations over the same association, so
         # the storage SCU is used with an acceptor here.

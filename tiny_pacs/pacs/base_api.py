@@ -9,10 +9,12 @@ from pydicom.tag import BaseTag
 
 TM = TypeVar('TM', bound=peewee.Model)
 
+
 #: Model with a DICOM tag to ``(attribute name, VR)`` mapping, used for
 #: building C-FIND queries
 class MappedModel(Protocol):
     mapping: dict[int, tuple[str, str]]
+
 
 #: Set of joins between models for a C-FIND query
 JoinsSet: TypeAlias = set[tuple[type[peewee.Model], type[peewee.Model]]]
@@ -35,16 +37,16 @@ SkippedTags: TypeAlias = set[BaseTag]
 
 #: Set of tags excluded from generating queries based on C-FIND-RQ
 EXCLUDED_ATTRS = set([
-    0x00080052, # Query/Retrieve Level
-    0x00080005, # Specific Character Set
-    0x00201200, # Number of Patient Related Studies
-    0x00201202, # Number of Patient Related Series
-    0x00201204, # Number of Patient Related Instances
-    0x00080061, # Modalities in Study
-    0x00080062, # SOP Classes in Study
-    0x00201070, # Other Study Numbers
-    0x00201206, # Number of Study Related Series
-    0x00201208, # Number of Study Related Instances
+    0x00080052,  # Query/Retrieve Level
+    0x00080005,  # Specific Character Set
+    0x00201200,  # Number of Patient Related Studies
+    0x00201202,  # Number of Patient Related Series
+    0x00201204,  # Number of Patient Related Instances
+    0x00080061,  # Modalities in Study
+    0x00080062,  # SOP Classes in Study
+    0x00201070,  # Other Study Numbers
+    0x00201206,  # Number of Study Related Series
+    0x00201208,  # Number of Study Related Instances
     0x00201209  # Number of Series Related Instances
 ])
 
@@ -62,7 +64,8 @@ class BaseAPI:
         self.bus = bus
         self.log = logging.getLogger(self.name())
 
-    def build_filters(self, model: MappedModel, query: 'peewee.ModelSelect[TM]',
+    def build_filters(self, model: MappedModel,
+                      query: 'peewee.ModelSelect[TM]',
                       ds: pydicom.Dataset,
                       skipped: SkippedTags | None = None
                       ) -> tuple['peewee.ModelSelect[TM]', ResponseAttrs]:
@@ -100,9 +103,9 @@ class BaseAPI:
             query = self.build_filter(query, attr, vr, elem)
         return query, response_attrs
 
-
     def build_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
-                     vr: str, elem: pydicom.DataElement) -> 'peewee.ModelSelect[TM]':
+                     vr: str, elem: pydicom.DataElement
+                     ) -> 'peewee.ModelSelect[TM]':
         """Build filter for specific attribute
 
         :param query: current SQL query
@@ -131,9 +134,9 @@ class BaseAPI:
             return self._date_time_filter(query, attr, elem.value)
         raise ValueError(f'Unsupported VR: {vr}')
 
-
     def filter_upper_level(self, model: MappedModel,
-                           elements: list[pydicom.DataElement]) -> Iterator[tuple[Any, ...]]:
+                           elements: list[pydicom.DataElement]
+                           ) -> Iterator[tuple[Any, ...]]:
         """Build filter for upper C-FIND level
 
         :param model: peewee model
@@ -148,15 +151,15 @@ class BaseAPI:
             attr = getattr(model, attr_name)
             yield elem.tag, attr, vr, elem, attr_name
 
-
-    def encode_response(self, instance: peewee.Model, response_attrs: ResponseAttrs,
+    def encode_response(self, instance: peewee.Model,
+                        response_attrs: ResponseAttrs,
                         encoding: str) -> pydicom.Dataset:
         """Creates a C-FIND response dataset
 
         :param instance: database model instance
         :type instance: peewee.Model
-        :param response_attrs: list of response attributes (tag, attribute name in
-                            the database model and VR)
+        :param response_attrs: list of response attributes (tag,
+                               attribute name in the database model and VR)
         :type response_attrs: list
         :param encoding: response encoding
         :type encoding: str
@@ -189,7 +192,6 @@ class BaseAPI:
         value = value.replace('*', '%')
         return query.where(attr ** value)
 
-
     def _date_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
                      value: str) -> 'peewee.ModelSelect[TM]':
         if '-' in value:
@@ -198,7 +200,6 @@ class BaseAPI:
             return query.where((attr >= start) & (attr <= end))
 
         return query.where(attr == value)
-
 
     def _time_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
                      value: str) -> 'peewee.ModelSelect[TM]':
@@ -209,8 +210,8 @@ class BaseAPI:
 
         return query.where(attr == value)
 
-
-    def _date_time_filter(self, query: 'peewee.ModelSelect[TM]', attr: peewee.Field,
+    def _date_time_filter(self, query: 'peewee.ModelSelect[TM]',
+                          attr: peewee.Field,
                           value: str) -> 'peewee.ModelSelect[TM]':
         if '-' in value:
             start, end = value.split('-')

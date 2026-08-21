@@ -27,7 +27,8 @@ def test_falsy_value_accepted() -> None:
     question.value = 0
     assert question.value == 0
 
-    toggle = Question('dump_ds', 'dump', lambda v: str(v).lower() == 'y', default='Y')
+    toggle = Question('dump_ds', 'dump', lambda v: str(v).lower() == 'y',
+                      default='Y')
     toggle.value = False
     assert toggle.value is False
 

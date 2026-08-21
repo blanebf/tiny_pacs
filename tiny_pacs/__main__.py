@@ -63,7 +63,8 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='tiny-pacs',
-        epilog='Running tiny-pacs without a command is equivalent to "tiny-pacs run".'
+        epilog='Running tiny-pacs without a command is equivalent to '
+               '"tiny-pacs run".'
     )
     subparsers = parser.add_subparsers(dest='command', metavar='COMMAND')
 
@@ -82,7 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
                                help='Write the configuration to a file '
                                     'instead of printing it to stdout')
     config_parser.add_argument('-i', '--interactive', action='store_true',
-                               help='Provide configuration values interactively')
+                               help='Provide configuration values '
+                                    'interactively')
 
     return parser
 
@@ -101,7 +103,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         argv = sys.argv[1:]
     else:
         argv = list(argv)
-    if not argv or (argv[0].startswith('-') and argv[0] not in ('-h', '--help')):
+    if not argv or (argv[0].startswith('-')
+                    and argv[0] not in ('-h', '--help')):
         argv = ['run', *argv]
     return build_parser().parse_args(argv)
 

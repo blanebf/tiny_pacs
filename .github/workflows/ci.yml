@@ -29,6 +29,9 @@ jobs:
       - name: Lint (ruff)
         run: poetry run ruff check .
 
+      - name: Lint (flake8)
+        run: poetry run flake8 tiny_pacs tests
+
       - name: Type check (mypy)
         run: poetry run mypy tiny_pacs tests
 

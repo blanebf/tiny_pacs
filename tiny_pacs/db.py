@@ -103,7 +103,8 @@ class Database(component.Component[DatabaseConfig]):
             raise RuntimeError('Database is not initialized')
         return self.db.atomic()
 
-    def string_agg_func(self, _: None = None) -> Callable[..., peewee.Function]:
+    def string_agg_func(self, _: None = None
+                        ) -> Callable[..., peewee.Function]:
         if isinstance(self.db, peewee.SqliteDatabase):
             return peewee.fn.group_concat
         if isinstance(self.db, peewee.PostgresqlDatabase):

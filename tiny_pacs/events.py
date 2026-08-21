@@ -80,7 +80,9 @@ class FindPayload:
     ds: pydicom.Dataset
 
 
-class Find(trolleybus.Event[FindPayload, Iterable[tuple[pydicom.Dataset, statuses.Status]]]):
+class Find(trolleybus.Event[FindPayload,
+                            Iterable[tuple[pydicom.Dataset,
+                                           statuses.Status]]]):
     """Incoming C-FIND request.
 
     Handling result is an iterable of ``(dataset, status)`` tuples.
@@ -120,9 +122,10 @@ class Get(trolleybus.Event[GetPayload, list[StoredFile]]):
     """Incoming C-GET request. Handling result is a list of stored files."""
 
 
-class Commitment(trolleybus.Event[list[tuple[uid.UID, uid.UID]],
-                                   tuple[list[tuple[uid.UID, uid.UID]],
-                                         list[tuple[uid.UID, uid.UID]]]]):
+class Commitment(
+    trolleybus.Event[list[tuple[uid.UID, uid.UID]],
+                     tuple[list[tuple[uid.UID, uid.UID]],
+                           list[tuple[uid.UID, uid.UID]]]]):
     """Storage Commitment request.
 
     Payload is a list of ``(SOP Class UID, SOP Instance UID)`` tuples; handling

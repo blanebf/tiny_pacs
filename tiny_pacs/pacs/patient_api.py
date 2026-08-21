@@ -30,7 +30,9 @@ class PatientAPI(base_api.BaseAPI):
         if patient_sex:
             query = query.where(Patient.patient_sex == patient_sex)
         if patient_birth_date:
-            query = query.where(Patient.patient_birth_date == patient_birth_date)
+            query = query.where(
+                Patient.patient_birth_date == patient_birth_date
+            )
         try:
             patient = query.get()
         except peewee.DoesNotExist:
@@ -73,9 +75,9 @@ class PatientAPI(base_api.BaseAPI):
             _tag = Tag(0x0020, 0x1200)
             skipped.add(_tag)
             select.append(
-                peewee.fn.Count(Study.id)\
-                    .alias('number_of_patient_related_studies')
-                )
+                peewee.fn.Count(Study.id)
+                .alias('number_of_patient_related_studies')
+            )
             response_attrs.append(
                 (_tag, 'number_of_patient_related_studies', 'IS', None)
             )
@@ -84,8 +86,8 @@ class PatientAPI(base_api.BaseAPI):
             _tag = Tag(0x0020, 0x1202)
             skipped.add(_tag)
             select.append(
-                peewee.fn.Count(Series.id)\
-                    .alias('number_of_patient_related_series')
+                peewee.fn.Count(Series.id)
+                .alias('number_of_patient_related_series')
             )
             response_attrs.append(
                 (_tag, 'number_of_patient_related_series', 'IS', None)
@@ -95,13 +97,15 @@ class PatientAPI(base_api.BaseAPI):
             _tag = Tag(0x0020, 0x1204)
             skipped.add(_tag)
             select.append(
-                peewee.fn.Count(Instance.id)\
-                    .alias('number_of_patient_related_instances')
+                peewee.fn.Count(Instance.id)
+                .alias('number_of_patient_related_instances')
             )
             response_attrs.append(
                 (_tag, 'number_of_patient_related_instances', 'IS', None)
             )
-            joins.update([(Patient, Study), (Study, Series), (Series, Instance)])
+            joins.update(
+                [(Patient, Study), (Study, Series), (Series, Instance)]
+            )
 
         query = Patient.select(*select)
         for join in joins:

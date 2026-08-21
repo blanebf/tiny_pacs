@@ -23,7 +23,8 @@ class AEQuestionnaire(Questionnaire):
                 int, False, 65536
             ),
             Question(
-                'dump_ds', 'Should your DICOM service dump Datasets and association PDU',
+                'dump_ds', 'Should your DICOM service dump Datasets and '
+                'association PDU',
                 lambda v: v.lower() == 'y', default='Y'
             )
         ]
@@ -39,7 +40,8 @@ class LogginQuestionnaire(Questionnaire):
     def __init__(self) -> None:
         self.logging_handler = Question(
             'logging_handler',
-            'Select logging handler: StreamHandler(1), FileHandler(2), RotatingFileHandler(3)',
+            'Select logging handler: StreamHandler(1), FileHandler(2), '
+            'RotatingFileHandler(3)',
             self.select_logging_handler, False, '1'
         )
         self.logging_level = Question(
@@ -223,7 +225,9 @@ class InteractiveFront:
             _config[questionnaire.key] = questionnaire.value()
         return _config
 
-    def save_config_to_file(self, _config: dict[str, Any], file_name: str) -> None:
+    def save_config_to_file(
+            self, _config: dict[str, Any], file_name: str
+    ) -> None:
         """Saves the collected configuration merged with the defaults.
 
         :param _config: configuration collected from the questionnaires

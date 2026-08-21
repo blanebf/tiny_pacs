@@ -7,7 +7,13 @@ from typing import Any
 import pydicom
 import trolleybus
 from pydicom import filereader, uid
-from pynetdicom2 import applicationentity, asceprovider, sopclass, statuses, uids
+from pynetdicom2 import (
+    applicationentity,
+    asceprovider,
+    sopclass,
+    statuses,
+    uids,
+)
 
 from . import component, devices, events
 
@@ -89,8 +95,8 @@ class Client(component.Component[ClientConfig]):
 
         :param remote_aet: remote AE title for the client
         :type remote_aet: str
-        :raises DestinationUnknownError: raised if component can not find settings
-                                         for provided AE Title
+        :raises DestinationUnknownError: raised if component can not find
+                                         settings for provided AE Title
         :return: DICOM Client
         :rtype: DICOMClient
         """
@@ -138,7 +144,8 @@ class DICOMClient:
     def echo(self) -> None:
         """Sends C-ECHO message (verification SCU)
 
-        :raises CEchoError: raised when C-ECHO-RSP have a non-successfull response code
+        :raises CEchoError: raised when C-ECHO-RSP have a non-successfull
+                            response code
         """
         self.log.info('Sending C-ECHO request to %r', self.remote_ae)
         self.aet.add_scu(sopclass.verification_scu)
@@ -158,7 +165,8 @@ class DICOMClient:
         :type ds: pydicom.Dataset
         :param root: C-FIND root, defaults to FindRoot.STUDY
         :type root: FindRoot, optional
-        :raises CFindError: raised if C-FIND-RSP have a non-successfull response code
+        :raises CFindError: raised if C-FIND-RSP have a non-successfull
+                            response code
         :yield: C-FIND results
         :rtype: Generator[pydicom.Dataset]
         """
@@ -224,7 +232,8 @@ class DICOMClient:
 
     def move(self, ds: pydicom.Dataset, root: MoveRoot = MoveRoot.STUDY,
              dest_ae: str | None = None) -> None:
-        """Makes a C-MOVE request to destination AE Title (or self, if not specified)
+        """Makes a C-MOVE request to destination AE Title (or self, if not
+        specified)
 
         :param ds: C-MOVE request dataset
         :type ds: pydicom.Dataset
@@ -235,18 +244,21 @@ class DICOMClient:
         """
         if dest_ae is None:
             dest_ae = self.local_ae
-        self.log.info('Sending C-MOVE request to %r -> %s', self.remote_ae, dest_ae)
+        self.log.info('Sending C-MOVE request to %r -> %s',
+                      self.remote_ae, dest_ae)
 
         self.aet.add_scu(sopclass.qr_move_scu)
         with self.aet.request_association(self._remote_ae_config()) as asce:
             self.log.debug('Association established with %r', self.remote_ae)
             self._move(asce, ds, dest_ae, root)
 
-    def move_instance(self, study_uid: uid.UID, series_uid: uid.UID,
-                      instance_uid: uid.UID, dest_ae: str | None = None,
-                      asce: asceprovider.AssociationRequester | None = None) -> None:
-        """Makes a C-MOVE request for a single instance to destination AE Title (or self, if not
-        specified)
+    def move_instance(
+            self, study_uid: uid.UID, series_uid: uid.UID,
+            instance_uid: uid.UID, dest_ae: str | None = None,
+            asce: asceprovider.AssociationRequester | None = None
+    ) -> None:
+        """Makes a C-MOVE request for a single instance to destination
+        AE Title (or self, if not specified)
 
         :param study_uid: Study Instance UID
         :type study_uid: uid.UID
@@ -261,7 +273,8 @@ class DICOMClient:
         """
         if dest_ae is None:
             dest_ae = self.local_ae
-        self.log.info('Sending C-MOVE request to %r -> %s', self.remote_ae, dest_ae)
+        self.log.info('Sending C-MOVE request to %r -> %s',
+                      self.remote_ae, dest_ae)
 
         ds = pydicom.Dataset()
         ds.StudyInstanceUID = study_uid
@@ -270,8 +283,10 @@ class DICOMClient:
         ds.QueryRetrieveLevel = 'IMAGE'
         self.aet.add_scu(sopclass.qr_move_scu)
         if asce is None:
-            with self.aet.request_association(self._remote_ae_config()) as asce:
-                self.log.debug('Association established with %r', self.remote_ae)
+            with self.aet.request_association(
+                    self._remote_ae_config()) as asce:
+                self.log.debug('Association established with %r',
+                               self.remote_ae)
                 self._move(asce, ds, dest_ae, MoveRoot.STUDY)
         else:
             self._move(asce, ds, dest_ae, MoveRoot.STUDY)
@@ -286,5 +301,6 @@ class DICOMClient:
                 raise CMoveError(status)
 
             if response.num_of_failed_sub_ops != 0:
-                self.log.error('C-MOVE operation failed. One or more operation failed')
+                self.log.error('C-MOVE operation failed. '
+                               'One or more operation failed')
                 raise CMoveError(status, 'Move operation failed')

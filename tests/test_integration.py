@@ -39,7 +39,7 @@ def pacs_client(pacs: server.Server) -> client.DICOMClient:
         return 'TEST_CLIENT'
     bus = trolleybus.EventBus()
     bus.subscribe(events.MainAET, main_aet)
-    _devices = devices.Devices(bus, {
+    devices.Devices(bus, {
         'devices': {
             'TINY_PACS': {
                 'aet': 'TINY_PACS',
@@ -70,7 +70,8 @@ def test_startup(pacs: server.Server, pacs_client: client.DICOMClient) -> None:
     pacs_client.echo()
 
 
-def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient) -> None:
+def test_find_empty(pacs: server.Server,
+                    pacs_client: client.DICOMClient) -> None:
     request = pydicom.Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -81,7 +82,8 @@ def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient) -> Non
     assert not list(results)
 
 
-def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient) -> None:
+def test_move_empty(pacs: server.Server,
+                    pacs_client: client.DICOMClient) -> None:
     request = pydicom.Dataset()
     request.StudyInstanceUID = '1.2.3'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -91,7 +93,8 @@ def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient) -> Non
 
 def test_storage(pacs: server.Server, pacs_client: client.DICOMClient,
                  test_ds: pydicom.Dataset) -> None:
-    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE, uid.ImplicitVRLittleEndian)
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
 
 
 class CStoreAE(applicationentity.AE):
@@ -119,7 +122,8 @@ def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient,
     # actual bound port before any association is made.
     ae = CStoreAE(test_ds, 'TEST_CLIENT', 0)
     ae.add_scp(sopclass.storage_scp)
-    _devices = next(c for c in pacs.components if isinstance(c, devices.Devices))
+    _devices = next(
+        c for c in pacs.components if isinstance(c, devices.Devices))
     _devices.default_port = ae.server.server_address[1]
     with ae:
         test_storage(pacs, pacs_client, test_ds)

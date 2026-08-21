@@ -47,7 +47,7 @@ def pacs_srv() -> pacs.PACS:
         )
         study1_series2 = models.Series.create(
             study=study1,
-            series_instance_uid = '1.2.3.4.6',
+            series_instance_uid='1.2.3.4.6',
             modality='SR'
         )
         models.Instance.create(
@@ -195,7 +195,8 @@ def test_study_find_patient_attrs_no_filters(pacs_srv: pacs.PACS) -> None:
     assert results[0].PatientName == 'Test^Test^Test'
 
 
-def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS) -> None:
+def test_study_find_patient_attrs_with_filters_positive(
+        pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = 'Test^*'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -207,7 +208,8 @@ def test_study_find_patient_attrs_with_filters_positive(pacs_srv: pacs.PACS) -> 
     assert results[0].PatientName == 'Test^Test^Test'
 
 
-def test_study_find_patient_attrs_with_filters_negative(pacs_srv: pacs.PACS) -> None:
+def test_study_find_patient_attrs_with_filters_negative(
+        pacs_srv: pacs.PACS) -> None:
     request = Dataset()
     request.PatientName = 'Test1^*'
     request.SpecificCharacterSet = 'ISO_IR 192'

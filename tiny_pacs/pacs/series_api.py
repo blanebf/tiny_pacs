@@ -8,7 +8,9 @@ from . import base_api, models
 
 
 class SeriesAPI(base_api.BaseAPI):
-    def c_store(self, study: peewee.Model, ds: pydicom.Dataset) -> peewee.Model:
+    def c_store(
+        self, study: peewee.Model, ds: pydicom.Dataset
+    ) -> peewee.Model:
         """C-STORE handler
 
         :param study: study reference
@@ -20,7 +22,9 @@ class SeriesAPI(base_api.BaseAPI):
         """
         series_instance_uid = ds.SeriesInstanceUID
         try:
-            return models.Series.get(models.Series.series_instance_uid == series_instance_uid)
+            return models.Series.get(
+                models.Series.series_instance_uid == series_instance_uid
+            )
         except peewee.DoesNotExist:
             modality = getattr(ds, 'Modality', None)
             series_number = getattr(ds, 'SeriesNumber', None)
@@ -30,7 +34,10 @@ class SeriesAPI(base_api.BaseAPI):
                 modality=modality,
                 series_number=series_number
             )
-            self.log.debug('Created new series, Series Instance UID: %s', series_instance_uid)
+            self.log.debug(
+                'Created new series, Series Instance UID: %s',
+                series_instance_uid
+            )
             return series
 
     def c_find(self, ds: pydicom.Dataset) -> Iterator[pydicom.Dataset]:
@@ -52,19 +59,26 @@ class SeriesAPI(base_api.BaseAPI):
         patient_attrs = [e for e in ds if e.tag in models.Patient.mapping]
         skipped.update(e.tag for e in patient_attrs)
         if patient_attrs:
-            _upper_level_filters = list(self.filter_upper_level(models.Patient, patient_attrs))
+            _upper_level_filters = list(
+                self.filter_upper_level(models.Patient, patient_attrs)
+            )
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
                 response_attrs.append(
                     (tag, ('study', 'patient', attr_name), vr, None)
                 )
-            joins.update([(models.Series, models.Study), (models.Study, models.Patient)])
+            joins.update(
+                [(models.Series, models.Study),
+                 (models.Study, models.Patient)]
+            )
 
         study_attrs = [e for e in ds if e.tag in models.Study.mapping]
         skipped.update(e.tag for e in study_attrs)
         if study_attrs:
-            _upper_level_filters = list(self.filter_upper_level(models.Study, study_attrs))
+            _upper_level_filters = list(
+                self.filter_upper_level(models.Study, study_attrs)
+            )
             upper_level_filters.extend(_upper_level_filters)
             for tag, attr, vr, _, attr_name in _upper_level_filters:
                 select.append(attr)
@@ -75,8 +89,8 @@ class SeriesAPI(base_api.BaseAPI):
             _tag = Tag((0x0020, 0x1209))
             skipped.add(_tag)
             select.append(
-                peewee.fn.Count(models.Instance.id)\
-                    .alias('number_of_series_related_instances')
+                peewee.fn.Count(models.Instance.id)
+                .alias('number_of_series_related_instances')
             )
             response_attrs.append(
                 (_tag, 'number_of_series_related_instances', 'IS', None)
@@ -88,7 +102,9 @@ class SeriesAPI(base_api.BaseAPI):
         for join in joins:
             query = query.join_from(*join)
 
-        query, _response_attrs = self.build_filters(models.Series, query, ds, skipped)
+        query, _response_attrs = self.build_filters(
+            models.Series, query, ds, skipped
+        )
         response_attrs.extend(_response_attrs)
         for _, attr, vr, elem, _ in upper_level_filters:
             if not elem.value:
@@ -99,4 +115,7 @@ class SeriesAPI(base_api.BaseAPI):
         if not query.count():
             return
 
-        yield from (self.encode_response(s, response_attrs, encoding) for s in query)
+        yield from (
+            self.encode_response(s, response_attrs, encoding)
+            for s in query
+        )
