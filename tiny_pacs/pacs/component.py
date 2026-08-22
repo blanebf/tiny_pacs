@@ -14,7 +14,7 @@ import trolleybus
 from pydicom.uid import UID
 from pynetdicom2 import statuses
 
-from .. import component, events
+from .. import component, events, schema
 from . import instance_api, models, patient_api, series_api, study_api
 
 
@@ -43,6 +43,17 @@ QR_LEVEL = {
 }
 
 
+#: Tables owned by the PACS component, in foreign key creation order
+TABLES: list[type[peewee.Model]] = [
+    models.Patient, models.Study, models.Series, models.Instance
+]
+
+#: Schema migrations of the PACS tables
+MIGRATIONS: list[schema.Migration] = [
+    schema.create_tables_migration(TABLES, 'Create PACS tables')
+]
+
+
 class PACSConfig(component.ComponentConfig):
     """Configuration of the :class:`PACS` component.
 
@@ -62,7 +73,7 @@ class PACS(component.Component[PACSConfig]):
         * :class:`~tiny_pacs.events.Move`
         * :class:`~tiny_pacs.events.Get`
         * :class:`~tiny_pacs.events.Commitment`
-        * :class:`~tiny_pacs.events.Tables`
+        * :class:`~tiny_pacs.events.Migrations`
 
     Component also handles all relevant DB interactions, except for keeping
     track of stored datasets. That function is relegated to components in
@@ -94,15 +105,17 @@ class PACS(component.Component[PACSConfig]):
         self.subscribe(events.Move, self.on_move)
         self.subscribe(events.Get, self.on_get)
         self.subscribe(events.Commitment, self.on_commitment)
-        self.subscribe(events.Tables, self.tables)
+        self.subscribe(events.Migrations, self.migrations)
 
-    def tables(self, _: None = None) -> list[type[peewee.Model]]:
-        """Returns a list of tables for DB component
+    def migrations(self, _: None = None) -> schema.ComponentMigrations:
+        """Returns schema migrations of the component tables
 
-        :return: list of tables used by this component
-        :rtype: list
+        :return: component migrations
+        :rtype: schema.ComponentMigrations
         """
-        return [models.Patient, models.Study, models.Series, models.Instance]
+        return schema.ComponentMigrations(
+            self.schema(), TABLES, MIGRATIONS
+        )
 
     def atomic(self) -> Any:
         """Context manager for handling simple transactions

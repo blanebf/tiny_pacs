@@ -21,7 +21,7 @@ from pydicom import uid
 from pynetdicom2 import asceprovider, fsm, pdu, statuses
 
 if TYPE_CHECKING:
-    from . import client, devices  # noqa: F401
+    from . import client, devices, schema  # noqa: F401
 
 
 #: Single stored file: SOP Class UID, Transfer Syntax UID and either a file
@@ -192,6 +192,14 @@ class Atomic(trolleybus.Event[None, Any]):
 
 class Tables(trolleybus.Event[None, list[type[peewee.Model]]]):
     """Request a list of database tables from components."""
+
+
+class Migrations(trolleybus.Event[None, 'schema.ComponentMigrations']):
+    """Request schema migrations from components.
+
+    Handling result is the component's schema name, its tables and its
+    migration list (see :class:`tiny_pacs.schema.ComponentMigrations`).
+    """
 
 
 class StringAgg(trolleybus.Event[None, Callable[..., peewee.Function]]):

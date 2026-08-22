@@ -92,6 +92,12 @@ class Component(trolleybus.EmitterMixin, Generic[TConfig]):
     #: to validate the component configuration at load time.
     config_model: ClassVar[type[ComponentConfig]] = ComponentConfig
 
+    #: Schema name used to track the schema version of the component's
+    #: tables (see :meth:`schema`). Defaults to the class name; components
+    #: whose implementations share the same tables must set this attribute to
+    #: a common name so they also share one schema version.
+    schema_name: ClassVar[str | None] = None
+
     #: Validated component configuration
     config: TConfig
 
@@ -105,6 +111,18 @@ class Component(trolleybus.EmitterMixin, Generic[TConfig]):
         :rtype: str
         """
         return cls.__name__
+
+    @classmethod
+    def schema(cls) -> str:
+        """Schema name of the component.
+
+        Used as the key of the schema version recorded by the DB component.
+        Defaults to the class name, see :attr:`schema_name`.
+
+        :return: schema name
+        :rtype: str
+        """
+        return cls.schema_name or cls.name()
 
     def __init__(
             self, bus: trolleybus.EventBus, config: TConfig | dict[str, Any]

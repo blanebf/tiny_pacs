@@ -12,3 +12,4 @@ self-contained.
    configuration
    running
    extending
+   migrations

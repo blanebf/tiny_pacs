@@ -17,7 +17,7 @@ import trolleybus
 from pydicom import uid
 from pynetdicom2 import applicationentity
 
-from . import component, events, questions
+from . import component, events, questions, schema
 from .component import TConfig
 
 
@@ -50,11 +50,25 @@ class StorageFiles(peewee.Model):
     is_stored = peewee.BooleanField(index=True, default=False)
 
 
+#: Tables owned by the storage components
+TABLES: list[type[peewee.Model]] = [StorageFiles]
+
+#: Schema migrations of the storage tables
+MIGRATIONS: list[schema.Migration] = [
+    schema.create_tables_migration(TABLES, 'Create storage tables')
+]
+
+
 class StorageBase(component.Component[TConfig]):
     """Abstract storage component.
 
     Provides basic storage functionality, common for all storage components.
     """
+
+    #: All storage implementations share the same tables and thus the same
+    #: schema version
+    schema_name = 'Storage'
+
     def __init__(
             self,
             bus: trolleybus.EventBus,
@@ -76,15 +90,17 @@ class StorageBase(component.Component[TConfig]):
         self.subscribe(events.StoreFailure, self.on_store_failure)
         self.subscribe(events.GetFiles, self.on_store_get_files)
         self.subscribe(events.StoreVerify, self.verify)
-        self.subscribe(events.Tables, self.tables)
+        self.subscribe(events.Migrations, self.migrations)
 
-    def tables(self, _: None = None) -> list[type[peewee.Model]]:
-        """Returns a list of tables used by the component
+    def migrations(self, _: None = None) -> schema.ComponentMigrations:
+        """Returns schema migrations of the component tables
 
-        :return: list of tables
-        :rtype: list[peewee.Model]
+        :return: component migrations
+        :rtype: schema.ComponentMigrations
         """
-        return [StorageFiles]
+        return schema.ComponentMigrations(
+            self.schema(), TABLES, MIGRATIONS
+        )
 
     def atomic(self) -> Any:
         """Opens transaction

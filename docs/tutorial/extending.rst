@@ -168,8 +168,9 @@ initialization and see three lifecycle events broadcasts by the event bus:
 
 * :class:`trolleybus.OnStart` — handled by
   :meth:`~tiny_pacs.component.Component.on_start`. The ``Database``
-  component collects models and creates tables at this point, so components
-  that provide tables must already be subscribed.
+  component collects models, applies schema migrations and creates tables
+  at this point, so components that provide tables must already be
+  subscribed.
 * :class:`trolleybus.OnStarted` — handled by
   :meth:`~tiny_pacs.component.Component.on_started`. Good place for work
   that needs the whole system up (e.g. connecting to external services).
@@ -199,15 +200,17 @@ Custom database tables
 ----------------------
 
 The ``Database`` component asks every component for its models when it
-starts: it broadcasts :class:`~tiny_pacs.events.Tables` and creates all the
-tables that are returned. A component can thus bring its own
+starts: it broadcasts :class:`~tiny_pacs.events.Migrations` (or
+:class:`~tiny_pacs.events.Tables` for components without migrations),
+binds all returned models to the shared database connection and applies
+the components' schema migrations. A component can thus bring its own
 ``peewee.Model`` classes:
 
 .. code-block:: python
 
     import peewee
 
-    from tiny_pacs import component, events
+    from tiny_pacs import component, events, schema
 
     class MyRecord(peewee.Model):
         value = peewee.CharField()
@@ -215,10 +218,18 @@ tables that are returned. A component can thus bring its own
     class MyComponent(component.Component[component.ComponentConfig]):
         def __init__(self, bus, config):
             super().__init__(bus, config)
-            self.subscribe(events.Tables, self.tables)
+            self.subscribe(events.Migrations, self.migrations)
 
-        def tables(self, _: None) -> list[type[peewee.Model]]:
-            return [MyRecord]
+        def migrations(self, _: None) -> schema.ComponentMigrations:
+            return schema.ComponentMigrations(
+                self.schema(), [MyRecord], MIGRATIONS
+            )
+
+``MIGRATIONS`` is the component's migration list; see
+:doc:`migrations` for how schema changes between releases are described.
+Components that never change their schema may simply subscribe to
+:class:`~tiny_pacs.events.Tables` and return their models — those tables
+are created at start without any versioning.
 
 The tables are bound to the shared database connection, so the component
 can query its own data within an atomic transaction requested through the
