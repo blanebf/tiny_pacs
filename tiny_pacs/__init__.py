@@ -1,2 +1,9 @@
-# -*- coding: utf-8 -*-
-__version__ = '0.1.0'
+"""A small pure-Python PACS (Picture Archiving and Communication
+System).
+"""
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version('tiny_pacs')
+except PackageNotFoundError:
+    __version__ = '0.0.0'

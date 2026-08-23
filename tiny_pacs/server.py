@@ -1,13 +1,16 @@
-# -*- coding: utf-8 -*-
+"""Provides main server implementation.
+
+Initializes all components and starts listening for incoming connections
+"""
 import logging
 import logging.config
 import time
-import threading
+from collections.abc import Iterator
+from typing import Any
 
-from pynetdicom2 import uids
-from . import ae
-from . import config
-from . import event_bus
+import trolleybus
+
+from . import ae, component, config
 
 
 class Server:
@@ -29,22 +32,23 @@ class Server:
         """
         self.config = _config
         logging.config.dictConfig(self.config.log)
-        self.bus = event_bus.EventBus()
-        self.ae = None
-        self.components = list(self.initalize_components())
+        self.bus = trolleybus.EventBus()
+        self.ae: ae.AE | None = None
+        self.components = list(self.initialize_components())
 
-    def start(self):
+    def start(self) -> None:
         """Starts the server.
 
-        Broadcasts `ON_START` and `ON_STARTED` events.
+        Emits `OnStart` and `OnStarted` events via
+        :meth:`trolleybus.EventBus.start` and starts the AE serving thread.
         """
-        self.bus.broadcast(event_bus.DefaultChannels.ON_START)
+        self.bus.start()
         self.ae = ae.AE(self.bus, self.config.ae)
-        threading.Thread(target=self.ae.serve_forever).start()
-        # TODO: Wait for actual AE to start
-        self.bus.broadcast(event_bus.DefaultChannels.ON_STARTED)
+        # AE binds its port at construction time; entering the context
+        # manager starts the serving thread.
+        self.ae.__enter__()
 
-    def start_with_block(self):
+    def start_with_block(self) -> None:
         """Starts the server and blocks current thread."""
         self.start()
         try:
@@ -57,30 +61,36 @@ class Server:
         finally:
             self.exit()
 
-    def exit(self):
+    def exit(self) -> None:
         """Handles server exit.
 
-        Broadcasts `ON_EXIT` event.
+        Emits `OnExit` event via :meth:`trolleybus.EventBus.stop` (listener
+        exceptions are suppressed and returned as
+        :class:`trolleybus.ListenerResult` objects) and stops the AE.
         """
-        self.bus.broadcast_nothrow(event_bus.DefaultChannels.ON_EXIT)
-        self.ae.quit()
+        self.bus.stop()
+        if self.ae is not None:
+            self.ae.quit()
 
-    def initalize_components(self):
+    def initialize_components(self) -> Iterator[component.Component[Any]]:
         """Component initialization
 
-        :yield: initializes components
+        :yield: initialized component
         :rtype: component.Component
         """
-        for component, _config in self.config.components.items():
-            is_on = _config.get('on', False)
-            if not is_on:
+        for _component, _config in self.config.components.items():
+            # Component configurations are validated against the config model
+            # each component provides (see ``Component.config_model``) when
+            # the configuration is loaded, so by this point every entry is a
+            # validated model instance.
+            if not _config.on:
                 # Component is disabled
                 continue
 
-            factory = config.COMPONENT_REGISTRY.get(component)
+            factory = config.COMPONENT_REGISTRY.get(_component)
             if factory is None:
                 # TODO: add dynamic component loading
-                pass
+                logging.error('Unknown component %s, skipping', _component)
+                continue
 
-            component = factory(self.bus, _config)
-            yield component
+            yield factory(self.bus, _config)

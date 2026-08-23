@@ -1,0 +1,124 @@
+"""Series level Query/Retrieve API."""
+from collections.abc import Iterator
+
+import peewee
+import pydicom
+from pydicom.tag import Tag
+
+from . import base_api, models
+
+
+class SeriesAPI(base_api.BaseAPI):
+    """API for the SERIES Query/Retrieve level."""
+
+    def c_store(
+        self, study: peewee.Model, ds: pydicom.Dataset
+    ) -> peewee.Model:
+        """C-STORE handler
+
+        :param study: study reference
+        :type study: models.Study
+        :param ds: incoming dataset
+        :type ds: pydicom.Dataset
+        :return: new or existing series record, that matches incoming dataset
+        :rtype: Series
+        """
+        series_instance_uid = ds.SeriesInstanceUID
+        try:
+            return models.Series.get(
+                models.Series.series_instance_uid == series_instance_uid
+            )
+        except peewee.DoesNotExist:
+            modality = getattr(ds, 'Modality', None)
+            series_number = getattr(ds, 'SeriesNumber', None)
+            series = models.Series.create(
+                study=study,
+                series_instance_uid=series_instance_uid,
+                modality=modality,
+                series_number=series_number
+            )
+            self.log.debug(
+                'Created new series, Series Instance UID: %s',
+                series_instance_uid
+            )
+            return series
+
+    def c_find(self, ds: pydicom.Dataset) -> Iterator[pydicom.Dataset]:
+        """C-FIND handler
+
+        :param ds: C-FIND request
+        :type ds: pydicom.Dataset
+        :yield: C-FIND results
+        :rtype: pydicom.Dataset
+        """
+        joins: base_api.JoinsSet = set()
+
+        response_attrs: base_api.ResponseAttrs = []
+        select: base_api.SelectColumns = [models.Series]
+        upper_level_filters: base_api.UpperLevelFilters = []
+
+        skipped: base_api.SkippedTags = set()
+
+        patient_attrs = [e for e in ds if e.tag in models.Patient.mapping]
+        skipped.update(e.tag for e in patient_attrs)
+        if patient_attrs:
+            _upper_level_filters = list(
+                self.filter_upper_level(models.Patient, patient_attrs)
+            )
+            upper_level_filters.extend(_upper_level_filters)
+            for tag, attr, vr, _, attr_name in _upper_level_filters:
+                select.append(attr)
+                response_attrs.append(
+                    (tag, ('study', 'patient', attr_name), vr, None)
+                )
+            joins.update(
+                [(models.Series, models.Study),
+                 (models.Study, models.Patient)]
+            )
+
+        study_attrs = [e for e in ds if e.tag in models.Study.mapping]
+        skipped.update(e.tag for e in study_attrs)
+        if study_attrs:
+            _upper_level_filters = list(
+                self.filter_upper_level(models.Study, study_attrs)
+            )
+            upper_level_filters.extend(_upper_level_filters)
+            for tag, attr, vr, _, attr_name in _upper_level_filters:
+                select.append(attr)
+                response_attrs.append((tag, ('study', attr_name), vr, None))
+            joins.update([(models.Series, models.Study)])
+
+        if 'NumberOfSeriesRelatedInstances' in ds:
+            _tag = Tag((0x0020, 0x1209))
+            skipped.add(_tag)
+            select.append(
+                peewee.fn.Count(models.Instance.id)
+                .alias('number_of_series_related_instances')
+            )
+            response_attrs.append(
+                (_tag, 'number_of_series_related_instances', 'IS', None)
+            )
+            joins.add((models.Series, models.Instance))
+
+        query = models.Series.select(*select)
+
+        for join in joins:
+            query = query.join_from(*join)
+
+        query, _response_attrs = self.build_filters(
+            models.Series, query, ds, skipped
+        )
+        response_attrs.extend(_response_attrs)
+        for _, attr, vr, elem, _ in upper_level_filters:
+            if not elem.value:
+                continue
+            query = self.build_filter(query, attr, vr, elem)
+
+        encoding = getattr(ds, 'SpecificCharacterSet', 'ISO-IR 6')
+        if not query.count():
+            return
+
+        yield from (
+            self.encode_response(s, response_attrs, encoding)
+            for s in query
+        )

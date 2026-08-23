@@ -1,25 +1,25 @@
-# -*- coding: utf-8 -*-
+import uuid
+from collections.abc import Iterator
+from typing import Any, BinaryIO
+
 import pydicom
 import pytest
-
+import trolleybus
 from pydicom import uid
-from pynetdicom2 import applicationentity
-from pynetdicom2 import sopclass
-from pynetdicom2 import statuses
-from pynetdicom2 import uids
+from pynetdicom2 import applicationentity, fsm, sopclass, statuses, uids
 
-from tiny_pacs import ae
-from tiny_pacs import client
-from tiny_pacs import config
-from tiny_pacs import devices
-from tiny_pacs import event_bus
-from tiny_pacs import server
+from tiny_pacs import client, config, devices, events, server
+
 
 @pytest.fixture
-def pacs():
+def pacs() -> Iterator[server.Server]:
+    # Port 0 lets the OS pick a free port, so no fixed TCP ports are needed
     conf = config.Config()
     conf.update_config({
-        'ae': {'port': 11113}
+        'ae': {'port': 0},
+        'components': {
+            'Database': {'on': True, 'db_name': str(uuid.uuid4())}
+        }
     })
     _pacs = server.Server(conf)
     _pacs.start()
@@ -27,15 +27,25 @@ def pacs():
     _pacs.exit()
 
 
+def pacs_port(_pacs: server.Server) -> int:
+    """Actual port the server AE has bound (port 0 = OS-assigned)."""
+    assert _pacs.ae is not None
+    return int(_pacs.ae.server.server_address[1])
+
+
 @pytest.fixture
-def pacs_client():
-    def main_aet():
+def pacs_client(pacs: server.Server) -> client.DICOMClient:
+    def main_aet(_: None) -> str:
         return 'TEST_CLIENT'
-    bus = event_bus.EventBus()
-    bus.subscribe(ae.AEChannels.MAIN_AET, main_aet)
-    _devices = devices.Devices(bus, {
+    bus = trolleybus.EventBus()
+    bus.subscribe(events.MainAET, main_aet)
+    devices.Devices(bus, {
         'devices': {
-            'TINY_PACS': {'aet': 'TINY_PACS', 'address': '127.0.0.1', 'port': 11113}
+            'TINY_PACS': {
+                'aet': 'TINY_PACS',
+                'address': '127.0.0.1',
+                'port': pacs_port(pacs)
+            }
         }
     })
     _client = client.Client(bus, {})
@@ -43,7 +53,7 @@ def pacs_client():
 
 
 @pytest.fixture
-def test_ds():
+def test_ds() -> pydicom.Dataset:
     ds = pydicom.Dataset()
     ds.PatientName = 'Test^Test^Test'
     ds.PatientSex = 'M'
@@ -56,11 +66,12 @@ def test_ds():
     return ds
 
 
-def test_startup(pacs: server.Server, pacs_client: client.DICOMClient):
+def test_startup(pacs: server.Server, pacs_client: client.DICOMClient) -> None:
     pacs_client.echo()
 
 
-def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):
+def test_find_empty(pacs: server.Server,
+                    pacs_client: client.DICOMClient) -> None:
     request = pydicom.Dataset()
     request.PatientName = None
     request.PatientSex = None
@@ -71,7 +82,8 @@ def test_find_empty(pacs: server.Server, pacs_client: client.DICOMClient):
     assert not list(results)
 
 
-def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):
+def test_move_empty(pacs: server.Server,
+                    pacs_client: client.DICOMClient) -> None:
     request = pydicom.Dataset()
     request.StudyInstanceUID = '1.2.3'
     request.SpecificCharacterSet = 'ISO_IR 192'
@@ -79,16 +91,19 @@ def test_move_empty(pacs: server.Server, pacs_client: client.DICOMClient):
     pacs_client.move(request)
 
 
-def test_storage(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):
-    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE, uid.ImplicitVRLittleEndian)
+def test_storage(pacs: server.Server, pacs_client: client.DICOMClient,
+                 test_ds: pydicom.Dataset) -> None:
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
 
 
 class CStoreAE(applicationentity.AE):
-    def __init__(self, rq, *args, **kwargs):
+    def __init__(self, rq: pydicom.Dataset, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.rq = rq
 
-    def on_receive_store(self, context, ds):
+    def on_receive_store(self, context: fsm.PContextDef,
+                         ds: BinaryIO | bytes) -> statuses.Status:
         d = pydicom.dcmread(ds)
         assert context.sop_class == self.rq.SOPClassUID
         assert d.PatientName == self.rq.PatientName
@@ -99,18 +114,26 @@ class CStoreAE(applicationentity.AE):
         return statuses.SUCCESS
 
 
-def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient, test_ds: pydicom.Dataset):
-    test_storage(pacs, pacs_client, test_ds)
-    find_request = pydicom.Dataset()
-    find_request.QueryRetrieveLevel = 'IMAGE'
-    find_request.StudyInstanceUID = None
-    find_request.SeriesInstanceUID = None
-    find_request.SOPInstanceUID = None
-    results = list(pacs_client.find(find_request))
-    assert len(results) == 1
-    ae = CStoreAE(test_ds, 'TEST_CLIENT', 11112)
+def test_full_cycle(pacs: server.Server, pacs_client: client.DICOMClient,
+                    test_ds: pydicom.Dataset) -> None:
+    # The storage AE binds an OS-assigned port up front; the server
+    # auto-adds the TEST_CLIENT device on the first association and uses
+    # its ``default_port`` for C-MOVE sub-operations, so point it at the
+    # actual bound port before any association is made.
+    ae = CStoreAE(test_ds, 'TEST_CLIENT', 0)
     ae.add_scp(sopclass.storage_scp)
+    _devices = next(
+        c for c in pacs.components if isinstance(c, devices.Devices))
+    _devices.default_port = ae.server.server_address[1]
     with ae:
+        test_storage(pacs, pacs_client, test_ds)
+        find_request = pydicom.Dataset()
+        find_request.QueryRetrieveLevel = 'IMAGE'
+        find_request.StudyInstanceUID = None
+        find_request.SeriesInstanceUID = None
+        find_request.SOPInstanceUID = None
+        results = list(pacs_client.find(find_request))
+        assert len(results) == 1
         move_request = pydicom.Dataset()
         move_request.QueryRetrieveLevel = 'IMAGE'
         move_request.StudyInstanceUID = test_ds.StudyInstanceUID

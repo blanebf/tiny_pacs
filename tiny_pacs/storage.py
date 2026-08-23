@@ -1,70 +1,180 @@
-# -*- coding: utf-8 -*-
+"""Storage components
+
+Module provides various implementation of storage components.
+"""
 import datetime
-import enum
 import io
 import os
+import pathlib
 import shutil
 import tempfile
+from collections.abc import Iterable, Sequence
+from typing import Any, BinaryIO, cast
 
 import peewee
-
 import pydicom
+import trolleybus
+from pydicom import uid
 from pynetdicom2 import applicationentity
 
-from . import ae
-from . import component
-from . import db
-from . import event_bus
+from . import component, events, questions, schema
+from .component import TConfig
 
 
-class StorageChannels(enum.Enum):
-    ON_STORE_DONE = 'on-store-done'
-    ON_STORE_FAILURE = 'on-store-failure'
-    ON_GET_FILES = 'on-store-get-files'
-    ON_STORE_VERIFY = 'on-store-verify'
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 class StorageFiles(peewee.Model):
+    """Storage model
+
+    Table for stored files.
+    """
+
+    #: SOP Instance UID of a stored file
     sop_instance_uid = peewee.CharField(max_length=64, unique=True)
+
+    #: SOP Class UID of a stored file
     sop_class_uid = peewee.CharField(max_length=64, index=True)
+
+    #: Transfer Syntax of a stored file
     transfer_syntax = peewee.CharField(max_length=64)
+
+    #: File name
     file_name = peewee.TextField()
-    added = peewee.DateTimeField(default=datetime.datetime.utcnow, index=True)
+
+    #: When the file was added to the storage
+    added = peewee.DateTimeField(default=_utcnow, index=True)
+
+    #: Whether the file has been stored successfully
     is_stored = peewee.BooleanField(index=True, default=False)
 
 
-class StorageBase(component.Component):
-    def __init__(self, bus: event_bus.EventBus, config: dict):
+#: Tables owned by the storage components
+TABLES: list[type[peewee.Model]] = [StorageFiles]
+
+#: Schema migrations of the storage tables
+MIGRATIONS: list[schema.Migration] = [
+    schema.create_tables_migration(TABLES, 'Create storage tables')
+]
+
+
+class StorageBase(component.Component[TConfig]):
+    """Abstract storage component.
+
+    Provides basic storage functionality, common for all storage components.
+    """
+
+    #: All storage implementations share the same tables and thus the same
+    #: schema version
+    schema_name = 'Storage'
+
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: TConfig | dict[str, Any]
+    ) -> None:
+        """Component initialization.
+
+        Subscribes to all storage-related events.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: TConfig or dict
+        """
         super().__init__(bus, config)
 
-        self.subscribe(ae.AEChannels.ON_GET_FILE, self.on_get_file)
-        self.subscribe(StorageChannels.ON_STORE_DONE, self.on_store_done)
-        self.subscribe(StorageChannels.ON_STORE_FAILURE, self.on_store_failure)
-        self.subscribe(StorageChannels.ON_GET_FILES, self.on_store_get_files)
-        self.subscribe(StorageChannels.ON_STORE_VERIFY, self.verify)
-        self.subscribe(db.DBChannels.TABLES, self.tables)
+        self.subscribe(events.GetFile, self.on_get_file)
+        self.subscribe(events.StoreDone, self.on_store_done)
+        self.subscribe(events.StoreFailure, self.on_store_failure)
+        self.subscribe(events.GetFiles, self.on_store_get_files)
+        self.subscribe(events.StoreVerify, self.verify)
+        self.subscribe(events.Migrations, self.migrations)
 
-    @staticmethod
-    def tables():
-        return [StorageFiles]
+    def migrations(self, _: None = None) -> schema.ComponentMigrations:
+        """Returns schema migrations of the component tables
 
-    def atomic(self):
-        return self.send_one(db.DBChannels.ATOMIC)
+        :return: component migrations
+        :rtype: schema.ComponentMigrations
+        """
+        return schema.ComponentMigrations(
+            self.schema(), TABLES, MIGRATIONS
+        )
 
-    def on_get_file(self, context, command_set: pydicom.Dataset):
+    def atomic(self) -> Any:
+        """Opens transaction
+
+        :return: transaction context manager
+        """
+        return self.send_one(events.Atomic, None)
+
+    def on_get_file(
+            self,
+            payload: events.GetFilePayload
+    ) -> tuple[BinaryIO, int]:
+        """Handles `GetFile` event from AE
+
+        :param payload: presentation context and command Dataset
+        :type payload: events.GetFilePayload
+        :return: file object to store the incoming dataset in and the start
+                 position of the dataset stream within it
+        :rtype: tuple[BinaryIO, int]
+        """
         raise NotImplementedError()
 
-    def on_store_done(self, ds: pydicom.Dataset):
+    def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event
+
+        :param ds: successfully stored dataset
+        :type ds: pydicom.Dataset
+        :raises NotImplementedError: always, subclasses must implement this
+        """
         raise NotImplementedError()
 
-    def on_store_failure(self, ds: pydicom.Dataset):
+    def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event
+
+        :param ds: dataset that failed to store
+        :type ds: pydicom.Dataset
+        :raises NotImplementedError: always, subclasses must implement this
+        """
         raise NotImplementedError()
 
-    def on_store_get_files(self, sop_instance_uids: list):
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
+        """Handles `GetFiles` event
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :yield: stored files: tuples of SOP Class UID, Transfer Syntax UID
+                and either a file name, a dataset or a file object
+        :raises NotImplementedError: always, subclasses must implement this
+        """
         raise NotImplementedError()
 
-    def new_file(self, sop_instance_uid: str, sop_class_uid: str,
-                 transfer_syntax: str, file_name: str):
+    def new_file(
+            self,
+            sop_instance_uid: str,
+            sop_class_uid: str,
+            transfer_syntax: str | uid.UID,
+            file_name: str
+    ) -> StorageFiles:
+        """Adds new file record to the database
+
+        :param sop_instance_uid: file SOP Instance UID
+        :type sop_instance_uid: str
+        :param sop_class_uid: file SOP Class UID
+        :type sop_class_uid: str
+        :param transfer_syntax: file original Transfer Syntax UID
+        :type transfer_syntax: str or uid.UID
+        :param file_name: file name in storage
+        :type file_name: str
+        :return: new file record
+        :rtype: StorageFiles
+        """
         self.log_info(
             'Storing new file '
             'SOP Instance UID: %(sop_instance_uid)s '
@@ -86,127 +196,271 @@ class StorageBase(component.Component):
                 file_name=file_name
             )
 
-    def file_stored(self, sop_instance_uid: str):
+    def file_stored(self, sop_instance_uid: str) -> None:
+        """Set file with specific SOP Instance UID as successfully stored
+
+        :param sop_instance_uid: file SOP Instance UID
+        :type sop_instance_uid: str
+        """
         with self.atomic():
-            stored_file = StorageFiles.get(StorageFiles.sop_instance_uid == sop_instance_uid)
+            stored_file = StorageFiles.get(
+                StorageFiles.sop_instance_uid == sop_instance_uid
+            )
             stored_file.is_stored = True
             stored_file.save()
-        self.log_info('Successfully stored file in DB, SOP Instance UID: %s', sop_instance_uid)
+        self.log_info('Successfully stored file in DB, SOP Instance UID: %s',
+                      sop_instance_uid)
 
-    def remove_file(self, sop_instance_uid: str):
+    def remove_file(self, sop_instance_uid: str) -> str:
+        """Remove file record from database with specific SOP Instance UID
+
+        :param sop_instance_uid: file SOP Instance UID
+        :type sop_instance_uid: str
+        :return: removed file name
+        :rtype: str
+        """
         with self.atomic():
-            stored_file = StorageFiles.get(StorageFiles.sop_instance_uid == sop_instance_uid)
+            stored_file = StorageFiles.get(
+                StorageFiles.sop_instance_uid == sop_instance_uid
+            )
             file_name = stored_file.file_name
             stored_file.delete_instance()
-        self.log_info('Removed stored file from DB, SOP Instance UID: %s', sop_instance_uid)
+        self.log_info('Removed stored file from DB, SOP Instance UID: %s',
+                      sop_instance_uid)
         return file_name
 
-    def verify(self, instances: list):
+    def verify(
+            self,
+            instances: list[tuple[uid.UID, uid.UID]]
+    ) -> tuple[frozenset[tuple[uid.UID, uid.UID]],
+               frozenset[tuple[uid.UID, uid.UID]]]:
+        """Verifies that the provided SOP Instance UIDs are successfully
+        stored
+
+        :param instances: list of tuples (SOP Class UID, SOP Instance UID)
+        :type instances: list
+        :return: tuple of two sets - one for successes and one for failures
+        :rtype: tuple[frozenset, frozenset]
+        """
         self.log_debug('Verifying instances: %r', instances)
         sop_instance_uids = [i for _, i in instances]
         query = self.find_files(sop_instance_uids)
-        stored_instances = frozenset((r.sop_class_uid, r.sop_instance_uid) for r in query)
-        instances = frozenset(instances)
-        success = instances & stored_instances
-        failure = instances - stored_instances
+        stored_instances = frozenset(
+            (r.sop_class_uid, r.sop_instance_uid) for r in query
+        )
+        _instances = frozenset(instances)
+        success = _instances & stored_instances
+        failure = _instances - stored_instances
         self.log_debug('Verification, stored successfully: %r', success)
         self.log_debug('Verification, missing from storage: %r', failure)
         return success, failure
 
-    def find_files(self, sop_instance_uids: list):
+    def find_files(
+            self,
+            sop_instance_uids: Sequence[str]
+    ) -> 'peewee.ModelSelect[StorageFiles]':
+        """Find stored files based on a list of SOP Instance UIDs
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :return: query to iterate over
+        :rtype: peewee.ModelSelect
+        """
+        # ``== True`` on a peewee field builds a SQL expression, it is not a
+        # Python singleton comparison; peewee 4 has no ``.is_()`` alternative.
         query = StorageFiles.select()\
             .where(
                 (StorageFiles.sop_instance_uid << sop_instance_uids) &
-                (StorageFiles.is_stored == True)
+                (StorageFiles.is_stored == True)  # noqa: E712
             )
         return query
 
-    def remove_nothrow(self, file_name):
+    def remove_nothrow(self, file_name: str) -> None:
+        """Safely removes file from disc without raising an exception
+
+        :param file_name: filename to remove
+        :type file_name: str
+        """
         try:
             os.remove(file_name)
-        except Exception as e:
-            self.log_exception(f'Failed to remove file {file_name}: {e}')
+        except Exception as error:
+            self.log_exception(f'Failed to remove file {file_name}: {error}')
 
 
-class FileStorage(StorageBase):
-    def __init__(self, bus: event_bus.EventBus, config: dict):
+class FileStorageConfig(component.ComponentConfig):
+    """Configuration of the :class:`FileStorage` component.
+
+    :ivar storage_dir: directory for stored files; a temporary directory is
+                       created and removed on shutdown when not provided
+    """
+
+    storage_dir: str | None = None
+
+
+class FileStorage(StorageBase[FileStorageConfig],
+                  applicationentity.FolderStorageMixin):
+    """Simple file storage implementation.
+
+    Stores incoming datasets in a provided folder. If specific folder is not
+    provided in the component configuration, temporary one is created.
+
+    Unique file naming and storage file creation (preamble and file meta
+    information) are provided by
+    :class:`pynetdicom2.applicationentity.FolderStorageMixin`. Note that the
+    mixin gives up after ``max_iterations`` attempts to find a free file name
+    and raises ``OSError`` in that case.
+    """
+
+    config_model = FileStorageConfig
+
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: FileStorageConfig | dict[str, Any]
+    ) -> None:
+        """Component initialization.
+
+        Uses the configured storage directory or creates a temporary one
+        that is removed on exit.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: FileStorageConfig or dict
+        """
         super().__init__(bus, config)
-        storage_dir = config.get('storage_dir', None)
+        storage_dir = self.config.storage_dir
         if storage_dir is None:
             # TODO Gracefully remove temporary directory on shutdown
             storage_dir = tempfile.mkdtemp()
-            self.subscribe(event_bus.DefaultChannels.ON_EXIT, self.cleanup)
+            self.subscribe(trolleybus.OnExit, self.cleanup)
         self.storage_dir = storage_dir
 
-    def on_get_file(self, context, command_set: pydicom.Dataset):
+    @classmethod
+    def interactive(cls) -> questions.Questionnaire:
+        """Returns interactive questionnaire for component configuration
+
+        :return: storage configuration questionnaire
+        :rtype: questions.Questionnaire
+        """
+        return questions.Questionnaire([
+            questions.Question(
+                'storage_dir', 'Enter storage directory',
+                lambda v: v, default=None, default_repr='Temp dir'
+            )
+        ])
+
+    def on_get_file(self,
+                    payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
+        """Handles `GetFile` event: creates a new file in the storage.
+
+        :param payload: presentation context and command Dataset
+        :type payload: events.GetFilePayload
+        :return: file object and the dataset stream start position
+        :rtype: tuple[BinaryIO, int]
+        """
+        command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
-        ts = context.supported_ts
-        full_name = self.get_file_name(sop_instance_uid)
-        folder, file_name = os.path.split(full_name)
-        folder = os.path.basename(folder)
-        file_name = os.path.join(folder, file_name)
+        ts = payload.context.supported_ts
+        folder = pathlib.Path(self.get_folder_path())
+        folder.mkdir(parents=True, exist_ok=True)
+        # Unique file name and file creation (preamble and file meta
+        # information) come from FolderStorageMixin.
+        ds, start = self.get_storage_file(payload.context, command_set, folder)
+        full_name = cast(io.BufferedRandom, ds).name
+        file_name = os.path.relpath(full_name, self.storage_dir)
         self.log_info('Storing incoming dataset in %s', file_name)
+        self.new_file(sop_instance_uid, sop_class_uid, ts, file_name)
+        return ds, start
 
-        ds = open(full_name, 'wb')
-        start = ds.tell()
-        try:
-            applicationentity.write_meta(ds, command_set, ts)
-        except Exception:
-            ds.close()
-            raise
-        else:
-            self.new_file(sop_instance_uid, sop_class_uid, ts, file_name)
-            return ds, start
-
-    def on_store_done(self, ds: pydicom.Dataset):
+    def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event: marks the file as stored."""
         self.file_stored(ds.SOPInstanceUID)
 
-    def on_store_failure(self, ds: pydicom.Dataset):
+    def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event: removes the file."""
         file_name = self.remove_file(ds.SOPInstanceUID)
         file_name = os.path.join(self.storage_dir, file_name)
         self.remove_nothrow(file_name)
 
-    def on_store_get_files(self, sop_instance_uids: list):
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
+        """Handles `GetFiles` event
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :yield: stored files
+        :rtype: events.StoredFile
+        """
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             file_name = os.path.join(self.storage_dir, file_record.file_name)
-            yield file_record.sop_class_uid, file_record.transfer_syntax, file_name
+            yield (file_record.sop_class_uid,
+                   file_record.transfer_syntax, file_name)
 
-    def get_folder_path(self):
-        now = datetime.datetime.utcnow()
+    def get_folder_path(self) -> str:
+        """Return full path for storing an incoming file
+
+        :return: full path for storing
+        :rtype: str
+        """
+        now = _utcnow()
         return os.path.join(self.storage_dir, now.strftime('%Y%m%d'))
 
-    def get_file_name(self, sop_instance_uid: str):
-        folder = self.get_folder_path()
-        file_name = f'{sop_instance_uid}.dcm'
-        full_name = os.path.join(folder, file_name)
-        i = 0
-        while os.path.exists(full_name):
-            i += 1
-            file_name = f'{sop_instance_uid}_{i}.dcm'
-            full_name = os.path.join(folder, file_name)
-        return full_name
+    def cleanup(self, _: None = None) -> None:
+        """Cleans up storage directory.
 
-    def cleanup(self):
+        Called on exit, if temporary directory is used
+        """
         try:
             shutil.rmtree(self.storage_dir)
-        except Exception as e:
+        except Exception as error:
             self.log_exception(
-                f'Failed to cleanup storage directory {self.storage_dir}: {e}'
+                f'Failed to cleanup storage directory {self.storage_dir}: '
+                f'{error}'
             )
 
 
-class InMemoryStorage(StorageBase):
-    def __init__(self, bus: event_bus.EventBus, config: dict):
-        super().__init__(bus, config)
-        self._temp_files = {}
-        self._stored_files = {}
+class InMemoryStorage(StorageBase[component.ComponentConfig]):
+    """Simple in-memory storage component.
 
-    def on_get_file(self, context, command_set: pydicom.Dataset):
+    Stores all incoming datasets in RAM. Intended for testing only.
+    """
+
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: component.ComponentConfig | dict[str, Any]
+    ) -> None:
+        """Component initialization.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: ComponentConfig or dict
+        """
+        super().__init__(bus, config)
+        self._temp_files: dict[str, tuple[BinaryIO, int]] = {}
+        self._stored_files: dict[str, pydicom.Dataset] = {}
+
+    def on_get_file(
+            self,
+            payload: events.GetFilePayload
+    ) -> tuple[BinaryIO, int]:
+        """Handles `GetFile` event: stores the dataset in memory.
+
+        :param payload: presentation context and command Dataset
+        :type payload: events.GetFilePayload
+        :return: file object and the dataset stream start position
+        :rtype: tuple[BinaryIO, int]
+        """
+        command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
-        ts = context.supported_ts
+        ts = payload.context.supported_ts
         fp = io.BytesIO()
         start = fp.tell()
         applicationentity.write_meta(fp, command_set, ts)
@@ -215,7 +469,8 @@ class InMemoryStorage(StorageBase):
         self.log_info('Storing dataset in memory: %s', sop_instance_uid)
         return fp, start
 
-    def on_store_done(self, ds: pydicom.Dataset):
+    def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event: reads the dataset into memory."""
         sop_instance_uid = ds.SOPInstanceUID
         self.file_stored(ds.SOPInstanceUID)
         fp, start = self._temp_files[sop_instance_uid]
@@ -223,52 +478,104 @@ class InMemoryStorage(StorageBase):
         self._stored_files[sop_instance_uid] = pydicom.dcmread(fp)
         del self._temp_files[sop_instance_uid]
 
-    def on_store_failure(self, ds: pydicom.Dataset):
+    def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event: drops the in-memory dataset."""
         file_name = self.remove_file(ds.SOPInstanceUID)
         try:
             del self._temp_files[file_name]
         except KeyError:
             pass
 
-    def on_store_get_files(self, sop_instance_uids: list):
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
+        """Handles `GetFiles` event
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :yield: stored files
+        :rtype: events.StoredFile
+        """
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             ds = self._stored_files[file_record.sop_instance_uid]
             yield file_record.sop_class_uid, file_record.transfer_syntax, ds
 
 
-class TempFileStorage(StorageBase):
-    def __init__(self, bus: event_bus.EventBus, config: dict):
-        super().__init__(bus, config)
-        self._temp_files = set()
+class TempFileStorage(StorageBase[component.ComponentConfig]):
+    """Simple storage component that uses temporary files to store incoming
+    dataset.
 
-    def on_get_file(self, context, command_set: pydicom.Dataset):
+    Intended for testing only.
+    """
+    def __init__(
+            self,
+            bus: trolleybus.EventBus,
+            config: component.ComponentConfig | dict[str, Any]
+    ) -> None:
+        """Component initialization.
+
+        :param bus: event bus
+        :type bus: trolleybus.EventBus
+        :param config: component configuration
+        :type config: ComponentConfig or dict
+        """
+        super().__init__(bus, config)
+        self._temp_files: set[str] = set()
+
+    def on_get_file(
+            self,
+            payload: events.GetFilePayload
+    ) -> tuple[BinaryIO, int]:
+        """Handles `GetFile` event: creates a new temporary file.
+
+        :param payload: presentation context and command Dataset
+        :type payload: events.GetFilePayload
+        :return: file object and the dataset stream start position
+        :rtype: tuple[BinaryIO, int]
+        """
+        command_set = payload.command_set
         sop_instance_uid = command_set.AffectedSOPInstanceUID
         sop_class_uid = command_set.AffectedSOPClassUID
-        ts = context.supported_ts
-        fp = tempfile.NamedTemporaryFile(delete=False)
+        ts = payload.context.supported_ts
+        fp = cast(BinaryIO, tempfile.NamedTemporaryFile(delete=False))
         start = fp.tell()
-        applicationentity.write_meta(fp, command_set, context.supported_ts)
+        applicationentity.write_meta(fp, command_set, ts)
         self.new_file(sop_instance_uid, sop_class_uid, ts, fp.name)
         self._temp_files.add(fp.name)
         self.log_info('Storing incoming dataset in %s', fp.name)
         return fp, start
 
-    def on_store_done(self, ds: pydicom.Dataset):
+    def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event: marks the file as stored."""
         self.file_stored(ds.SOPInstanceUID)
 
-    def on_store_failure(self, ds: pydicom.Dataset):
+    def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event: removes the temporary file."""
         file_name = self.remove_file(ds.SOPInstanceUID)
         self.remove_nothrow(file_name)
         self._temp_files.remove(file_name)
 
-    def on_store_get_files(self, sop_instance_uids: list):
+    def on_store_get_files(
+            self,
+            sop_instance_uids: list[str]
+    ) -> Iterable[events.StoredFile]:
+        """Handles `GetFiles` event
+
+        :param sop_instance_uids: list of SOP Instance UIDs
+        :type sop_instance_uids: list
+        :yield: stored files
+        :rtype: events.StoredFile
+        """
         self.log_debug('Getting files %r', sop_instance_uids)
         for file_record in self.find_files(sop_instance_uids):
             file_name = file_record.file_name
-            yield file_record.sop_class_uid, file_record.transfer_syntax, file_name
+            yield (file_record.sop_class_uid,
+                   file_record.transfer_syntax, file_name)
 
-    def on_exit(self):
+    def on_exit(self) -> None:
+        """Removes left-over temporary files on exit."""
         super().on_exit()
         for file_name in self._temp_files:
             self.remove_nothrow(file_name)
