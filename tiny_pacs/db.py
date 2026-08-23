@@ -166,7 +166,11 @@ class Database(component.Component[DatabaseConfig]):
         # serialization.
         with self.atomic():
             if isinstance(self.db, peewee.PostgresqlDatabase):
-                self.db.execute_sql(
+                execute_sql = cast(
+                    Callable[[str, tuple[int, ...]], Any],
+                    self.db.execute_sql
+                )
+                execute_sql(
                     'SELECT pg_advisory_xact_lock(%s)',
                     (MIGRATIONS_LOCK_KEY,)
                 )

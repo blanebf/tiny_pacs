@@ -252,7 +252,7 @@ class Config(pydantic.BaseModel):
         :raises pydantic.ValidationError: raised when the configuration does
                                           not match the configuration models
         """
-        data: dict | None
+        data: dict[str, Any] | None
         if isinstance(_config, list):
             for _conf in _config:
                 self.update_config(_conf)

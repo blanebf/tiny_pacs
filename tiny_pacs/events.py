@@ -174,7 +174,9 @@ class GetFiles(trolleybus.Event[list[str], Iterable[StoredFile]]):
 
 
 class StoreVerify(trolleybus.Event[list[tuple[uid.UID, uid.UID]],
-                                   tuple[frozenset, frozenset]]):
+                                   tuple[frozenset[tuple[uid.UID, uid.UID]],
+                                         frozenset[tuple[uid.UID,
+                                                         uid.UID]]]]):
     """Verify that provided SOP Instance UIDs are stored.
 
     Payload is a list of ``(SOP Class UID, SOP Instance UID)`` tuples;

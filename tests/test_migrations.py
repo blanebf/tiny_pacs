@@ -1,7 +1,7 @@
 """Tests of the schema version management."""
 import pathlib
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, cast
 
 import peewee
 import pytest
@@ -99,9 +99,14 @@ def _version(name: str) -> int | None:
     return row.version if row is not None else None
 
 
-def _columns(database: db.Database) -> set[str]:
+def _execute_sql(database: db.Database, sql: str) -> Any:
     assert database.db is not None
-    cursor = database.db.execute_sql('PRAGMA table_info(dummymodel)')
+    execute_sql = cast(Callable[[str], Any], database.db.execute_sql)
+    return execute_sql(sql)
+
+
+def _columns(database: db.Database) -> set[str]:
+    cursor = _execute_sql(database, 'PRAGMA table_info(dummymodel)')
     return {row[1] for row in cursor.fetchall()}
 
 
@@ -196,12 +201,13 @@ def test_legacy_db_runs_full_chain(tmp_path: pathlib.Path) -> None:
     # Simulate a database created before the migration mechanism
     # existed: the table is there, but there is no schema version row
     database = _start(db_name)
-    assert database.db is not None
-    database.db.execute_sql(
+    _execute_sql(
+        database,
         'CREATE TABLE dummymodel (id INTEGER NOT NULL PRIMARY KEY, '
         'name VARCHAR(64) NOT NULL)'
     )
-    database.db.execute_sql(
+    _execute_sql(
+        database,
         "INSERT INTO dummymodel (name) VALUES ('legacy-row')"
     )
     _close(database)

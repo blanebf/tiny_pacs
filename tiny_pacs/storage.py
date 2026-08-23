@@ -232,7 +232,8 @@ class StorageBase(component.Component[TConfig]):
     def verify(
             self,
             instances: list[tuple[uid.UID, uid.UID]]
-    ) -> tuple[frozenset, frozenset]:
+    ) -> tuple[frozenset[tuple[uid.UID, uid.UID]],
+               frozenset[tuple[uid.UID, uid.UID]]]:
         """Verifies that the provided SOP Instance UIDs are successfully
         stored
 
