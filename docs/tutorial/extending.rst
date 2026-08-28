@@ -4,7 +4,9 @@ Extending tiny_pacs
 ``tiny_pacs`` is built around components that communicate through an event
 bus. Extending the server means writing a new component: a class that
 subscribes to the events it cares about and, optionally, exposes its own
-configuration. This tutorial builds a small component from scratch.
+configuration. Components are discovered through Python entry points, so an
+extension is an ordinary installable package — no core changes required.
+This tutorial builds a small component from scratch.
 
 How components work
 -------------------
@@ -14,6 +16,12 @@ registered in the component registry under the name used in configuration
 files. At startup the :class:`~tiny_pacs.server.Server` instantiates every
 enabled component, passing the shared event bus and the component's
 validated configuration to it.
+
+The registry is populated from two sources: the built-in components
+(``Database``, ``Devices``, ``PACS`` and the storage backends) and the
+``tiny_pacs.components`` :doc:`entry point group <extensions>` discovered
+on the first configuration load — any installed package may contribute
+components this way.
 
 Components talk to each other through
 `trolleybus <https://pypi.org/project/trolleybus/>`_ events defined in
@@ -76,8 +84,25 @@ The handler receives the event payload directly — for
 value of a handler is the listener result of the event; ``StoreDone``
 listeners return ``None``, so it is simply ignored here.
 
-Step 3: register the component so the loader knows which model to validate
-its configuration against:
+Step 3: make the component discoverable. Components are registered in the
+component registry; the registry is populated from the
+``tiny_pacs.components`` entry point group. Declare the entry point in the
+extension package's ``pyproject.toml`` (legacy Poetry metadata, the style
+used throughout this repository):
+
+.. code-block:: toml
+
+    [tool.poetry.plugins."tiny_pacs.components"]
+    StoreLogger = "store_logger:StoreLogger"
+
+The entry point name — ``StoreLogger`` — is the name used in the
+``components`` section of configuration files. A package built with PEP 621
+metadata declares the identical entry point as
+``[project.entry-points."tiny_pacs.components"]`` instead; the installed
+metadata is the same either way (see :doc:`extensions`).
+
+Programmatic registration is the equivalent for embedding ``tiny_pacs``
+into another application:
 
 .. code-block:: python
 
@@ -102,15 +127,18 @@ time, rejecting unknown keys or wrong types.
 .. note::
 
    Registration must happen before the configuration is loaded (the loader
-   looks the component up in the registry), which is why the example below
-   imports the custom module before touching the configuration.
+   looks the component up in the registry). Entry points handle this
+   automatically — they are loaded on the first ``Config`` construction; a
+   programmatic ``register_component`` call must simply precede it.
 
 Running the extended server
 ---------------------------
 
-The CLI does not know about third-party components, so an extended server
-is started from a small Python script. Put the pieces together — say, in
-``store_logger.py`` in your project:
+An extension shipped as a package with a ``tiny_pacs.components`` entry
+point needs no runner script: installing it makes the component visible to
+the stock CLI.
+
+Put the pieces together — say, in ``store_logger.py`` in your project:
 
 .. code-block:: python
 
@@ -120,7 +148,7 @@ is started from a small Python script. Put the pieces together — say, in
     import pydicom
     import trolleybus
 
-    from tiny_pacs import component, config, events
+    from tiny_pacs import component, events
 
 
     class StoreLoggerConfig(component.ComponentConfig):
@@ -139,22 +167,20 @@ is started from a small Python script. Put the pieces together — say, in
             with open(self.config.log_file, 'a') as fp:
                 fp.write(f'{ds.PatientID} {ds.SOPInstanceUID}\n')
 
+Declare the entry point and install the package (during development,
+``pip install -e .``):
 
-    config.register_component('StoreLogger', StoreLogger)
+.. code-block:: toml
 
-…and start the server from a runner that imports it:
+    [tool.poetry.plugins."tiny_pacs.components"]
+    StoreLogger = "store_logger:StoreLogger"
 
-.. code-block:: python
+Then enable the component in the configuration and start the server the
+usual way:
 
-    import store_logger  # noqa: F401 — registers StoreLogger
+.. code-block:: bash
 
-    from tiny_pacs import config, server
-
-    conf = config.Config()
-    conf.update_config('config.yaml')
-
-    srv = server.Server(conf)
-    srv.start_with_block()
+    tiny-pacs run -c config.yaml
 
 The configuration merges the usual defaults with the ``StoreLogger`` entry;
 every C-STORE the server accepts now also appends a line to the configured
@@ -241,12 +267,54 @@ can query its own data within an atomic transaction requested through the
     with atomic:
         MyRecord.create(value='hello')
 
+Adding CLI subcommands
+----------------------
+
+Extensions may also add ``tiny-pacs`` subcommands through the
+``tiny_pacs.cli`` entry point group. The entry point name becomes the
+subcommand name; the entry point value is a ``register`` callable that
+receives argparse's subparsers action:
+
+.. code-block:: python
+
+    # store_logger_cli.py
+    import argparse
+
+    def register(subparsers: argparse.Action) -> None:
+        from tiny_pacs.__main__ import add_common_arguments
+
+        parser = subparsers.add_parser(
+            'storelog', help='inspect the store log'
+        )
+        add_common_arguments(parser)   # shared -c/--config handling
+        parser.set_defaults(command_handler=storelog_command)
+
+    def storelog_command(args: argparse.Namespace) -> None:
+        ...
+
+.. code-block:: toml
+
+    [tool.poetry.plugins."tiny_pacs.cli"]
+    storelog = "store_logger_cli:register"
+
+``tiny-pacs`` dispatches to the callable stored by
+``parser.set_defaults(command_handler=...)`` after parsing. Reserved
+subcommand names (``run``, ``config``, ``help``) cannot be registered even
+from inside ``register()``; registrations are otherwise isolated and
+reverted on failure, so a plugin can never break the ``tiny-pacs`` binary.
+
 Replacing built-in components
 -----------------------------
 
-Because components are looked up in the registry by name, a custom component
-registered under a built-in name replaces the built-in one for every
-configuration that references that name. Combined with the per-component
-configuration, this is how storage backends, the device registry or even the
-PACS logic itself can be swapped out without touching the rest of the
-server.
+Because components are looked up in the registry by name, a custom
+component registered under a built-in name replaces the built-in one for
+every configuration that references that name. The same works from an
+entry point: a ``tiny_pacs.components`` entry point named ``Devices``
+overrides the built-in ``Devices`` component (the replacement is logged).
+Combined with the per-component configuration, this is how storage
+backends, the device registry or even the PACS logic itself can be swapped
+out without touching the rest of the server.
+
+A programmatic ``register_component`` call always wins over installed
+plugins — the embedder's escape hatch. See :doc:`extensions` for the full
+extension contract.

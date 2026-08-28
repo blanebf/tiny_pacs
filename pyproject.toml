@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tiny_pacs"
-version = "0.2.0"
+version = "0.3.0"
 description = "A small pure-Python PACS (Picture Archiving and Communication System)"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
@@ -44,6 +44,13 @@ flake8 = "^7.0"
 [tool.poetry.group.docs.dependencies]
 sphinx = "^7.2"
 sphinx-rtd-theme = "^3.0"
+
+[tool.poetry.extras]
+# Convenience extras pulling the optional extension distributions in. The
+# extension packages are wired here once they are published; installing an
+# extra that lists nothing yet only installs the core.
+admin = []
+identity = []
 
 [tool.poetry.scripts]
 tiny-pacs = "tiny_pacs.__main__:main"

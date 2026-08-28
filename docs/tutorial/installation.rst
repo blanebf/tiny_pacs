@@ -16,6 +16,24 @@ repository:
 This installs the ``tiny_pacs`` package together with the ``tiny-pacs``
 command-line script.
 
+Optional extensions
+-------------------
+
+Extensions are optional, independently versioned packages that plug into
+``tiny_pacs`` through entry points (see :doc:`extensions`). The core
+provides convenience extras that pull them in:
+
+.. code-block:: bash
+
+    pip install tiny_pacs[admin]        # admin CLI + DB device registry
+    pip install tiny_pacs[identity]     # user management + association auth
+    pip install tiny_pacs[admin,identity]
+
+An extension can also be installed directly (``pip install
+tiny-pacs-admin``); the effect is identical. Installing an extension alone
+never changes server behaviour — its components stay disabled until enabled
+in the configuration, and its CLI subcommands are additive.
+
 Verifying the installation
 --------------------------
 

@@ -89,7 +89,9 @@ class Server:
 
             factory = config.COMPONENT_REGISTRY.get(_component)
             if factory is None:
-                # TODO: add dynamic component loading
+                # Plugin components are loaded from the entry point group on
+                # the first Config construction; a name missing here comes
+                # from a broken entry point or an unknown configuration.
                 logging.error('Unknown component %s, skipping', _component)
                 continue
 
