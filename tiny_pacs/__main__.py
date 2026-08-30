@@ -63,14 +63,25 @@ def run_command(args: argparse.Namespace) -> None:
 
 
 def config_command(args: argparse.Namespace) -> None:
-    """Generates a YAML configuration file.
+    """Generates or inspects a YAML configuration file.
 
     Without ``--interactive`` the effective default configuration is
     written; with ``--interactive`` every configuration value is asked
-    on the terminal first.
+    on the terminal first. The ``show`` action loads the configuration
+    from ``-c/--config`` and dumps the effective result (defaults merged
+    with the loaded sources).
 
     :param args: parsed ``config`` command arguments
     """
+    if args.action == 'show':
+        conf = config.Config()
+        conf.update_config(args.config)
+        if args.output:
+            config.write_yaml(conf, args.output)
+            print(f'Configuration saved to {args.output}')
+        else:
+            sys.stdout.write(config.dump_yaml(conf))
+        return
     conf = config.Config()
     if args.interactive:
         front = interactive.TerminalFront()
@@ -136,10 +147,18 @@ def build_parser(load_plugins: bool = True) -> argparse.ArgumentParser:
     add_run_arguments(run_parser)
 
     config_parser = subparsers.add_parser(
-        'config', help='generate a configuration file',
-        description='Generate a YAML configuration file. The default values '
-                    'are written when not in interactive mode.'
+        'config', help='generate or inspect a configuration file',
+        description='Generate a YAML configuration file (the default '
+                    'values are written when not in interactive mode) or '
+                    'dump the effective configuration with "config show".'
     )
+    config_parser.add_argument('action', nargs='?', default='generate',
+                               choices=['generate', 'show'],
+                               help='"generate" writes a fresh '
+                                    'configuration, "show" dumps the '
+                                    'effective configuration loaded from '
+                                    '-c/--config')
+    add_common_arguments(config_parser)
     config_parser.add_argument('-o', '--output', default=None,
                                help='Write the configuration to a file '
                                     'instead of printing it to stdout')

@@ -13,4 +13,5 @@ self-contained.
    running
    extending
    extensions
+   extensions-admin
    migrations

@@ -1,0 +1,83 @@
+[tool.poetry]
+name = "tiny_pacs_admin"
+version = "0.1.0"
+description = "Admin CLI and DB-backed device registry for tiny_pacs"
+authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
+license = "MIT"
+readme = "README.rst"
+homepage = "https://github.com/blanebf/tiny_pacs"
+repository = "https://github.com/blanebf/tiny_pacs"
+keywords = ["medical", "dicom", "network"]
+
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries"
+]
+
+packages = [
+    { include = "tiny_pacs_admin" }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4.0"
+tiny_pacs = ">=0.3,<0.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0"
+ruff = "*"
+mypy = "^1.0"
+flake8 = "^7.0"
+
+# Entry points are how the extension plugs into the core: the component is
+# advertised to the ``tiny_pacs.components`` group and the CLI subcommands to
+# the ``tiny_pacs.cli`` group (see the core extension docs).
+
+[tool.poetry.plugins."tiny_pacs.components"]
+DeviceStore = "tiny_pacs_admin.store:DeviceStore"
+
+[tool.poetry.plugins."tiny_pacs.cli"]
+devices = "tiny_pacs_admin.cli:register_devices"
+components = "tiny_pacs_admin.cli:register_components"
+db = "tiny_pacs_admin.cli:register_db"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 79
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+disallow_untyped_defs = true
+
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"

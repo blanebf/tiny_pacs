@@ -38,6 +38,8 @@ Features
 * Configuration is described with `pydantic <https://docs.pydantic.dev>`_
   models and validated at load time; each component supplies its own config
   model
+* Extensible through Python entry points: optional extension packages add
+  components and ``tiny-pacs`` CLI subcommands without core changes
 
 Requirements
 ------------
@@ -66,12 +68,31 @@ For development, with `Poetry <https://python-poetry.org/>`_:
     cd tiny_pacs
     poetry install
 
+Optional extensions
+-------------------
+
+Extensions are optional packages that plug into ``tiny_pacs`` through
+entry points. Install them with the convenience extras:
+
+.. code-block:: bash
+
+    pip install tiny_pacs[admin]      # admin CLI + DB-backed device registry
+    pip install tiny_pacs[identity]   # user management + association auth
+
+``tiny-pacs-admin`` adds a database-backed device registry (per-device
+identity policy, configurable auto-add defaults) and the ``devices``,
+``components`` and ``db`` CLI subcommands for offline administration.
+Installing an extension never changes server behaviour on its own. See the
+`documentation <https://tiny-pacs.readthedocs.io/>`_ for details.
+
 Quick start
 -----------
 
-The CLI provides two commands: ``run`` starts the server and ``config``
-generates a configuration file. Running ``tiny-pacs`` without a command is
-equivalent to ``tiny-pacs run``, so the traditional invocation keeps working.
+The CLI provides two built-in commands: ``run`` starts the server and
+``config`` generates or inspects a configuration file (``config show``
+dumps the effective configuration). Running ``tiny-pacs`` without a command
+is equivalent to ``tiny-pacs run``, so the traditional invocation keeps
+working. Extensions can add further subcommands.
 
 Start the server with the built-in defaults — AE title ``TINY_PACS``, port
 ``11112``, an in-memory SQLite database and in-memory storage:

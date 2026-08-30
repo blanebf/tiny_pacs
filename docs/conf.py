@@ -5,6 +5,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 
 sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('../extensions/tiny_pacs_admin'))
 
 project = 'tiny_pacs'
 copyright = "2020, Pavel 'Blane' Tuchin"

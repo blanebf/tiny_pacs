@@ -37,8 +37,17 @@ def test_parse_args_run_command() -> None:
 def test_parse_args_config_command() -> None:
     args = cli.parse_args(['config', '-o', 'conf.yaml', '-i'])
     assert args.command == 'config'
+    assert args.action == 'generate'
+    assert args.config == []
     assert args.output == 'conf.yaml'
     assert args.interactive is True
+
+
+def test_parse_args_config_show() -> None:
+    args = cli.parse_args(['config', 'show', '-c', 'conf.yaml'])
+    assert args.command == 'config'
+    assert args.action == 'show'
+    assert args.config == ['conf.yaml']
 
 
 def test_parse_args_help() -> None:
@@ -80,8 +89,12 @@ def test_config_command_output_file(tmp_path: Path) -> None:
 
 def test_config_command_interactive(tmp_path: Path,
                                     monkeypatch: pytest.MonkeyPatch) -> None:
-    inputs = ['MY_AE', '', '4242', '', 'Y', '', '',
-              'N', 'N', 'N', 'N', 'N', 'N']
+    # The wizard asks "use component?" for every registered component, so
+    # the number of declines depends on the installed extensions.
+    config.load_component_plugins()
+    n_components = len(config.COMPONENT_REGISTRY)
+    inputs = (['MY_AE', '', '4242', '', 'Y', '', '']
+              + ['N'] * n_components)
     monkeypatch.setattr('builtins.input', lambda prompt='': inputs.pop(0))
     out_file = tmp_path / 'tiny_pacs.yaml'
     cli.config_command(cli.parse_args(['config', '-i', '-o', str(out_file)]))
@@ -95,9 +108,12 @@ def test_config_command_interactive(tmp_path: Path,
 def test_run_command_interactive_saves_config(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     out_file = tmp_path / 'wizard.yaml'
-    inputs = ['', '', '', '', '', '',
-              'N', 'N', 'N', 'N', 'N', 'N',
-              'Y', str(out_file), 'N']
+    # See test_config_command_interactive: decline every registered
+    # component, however many extensions contribute.
+    config.load_component_plugins()
+    n_components = len(config.COMPONENT_REGISTRY)
+    inputs = (['', '', '', '', '', ''] + ['N'] * n_components
+              + ['Y', str(out_file), 'N'])
     monkeypatch.setattr('builtins.input', lambda prompt='': inputs.pop(0))
     created: list[config.Config] = []
 
@@ -114,6 +130,30 @@ def test_run_command_interactive_saves_config(
     data = yaml.safe_load(out_file.read_text())
     assert data['ae']['ae_title'] == ['TINY_PACS']
     assert data['ae']['port'] == 11112
+    assert out_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_config_show_dumps_effective_config(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    conf_file = tmp_path / 'override.yaml'
+    conf_file.write_text('ae:\n  port: 4242\n')
+    cli.config_command(cli.parse_args(['config', 'show',
+                                       '-c', str(conf_file)]))
+    data = yaml.safe_load(capsys.readouterr().out)
+    # The override is merged into the defaults
+    assert data['ae']['port'] == 4242
+    assert data['ae']['ae_title'] == ['TINY_PACS']
+    assert set(data['components']) == set(config.DEFAULT_COMPONENTS)
+
+
+def test_config_show_output_file(tmp_path: Path) -> None:
+    conf_file = tmp_path / 'override.yaml'
+    conf_file.write_text('ae:\n  port: 4242\n')
+    out_file = tmp_path / 'effective.yaml'
+    cli.config_command(cli.parse_args([
+        'config', 'show', '-c', str(conf_file), '-o', str(out_file)]))
+    data = yaml.safe_load(out_file.read_text())
+    assert data['ae']['port'] == 4242
     assert out_file.stat().st_mode & 0o777 == 0o600
 
 

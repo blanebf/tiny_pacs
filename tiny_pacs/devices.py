@@ -78,6 +78,7 @@ class Devices(component.Component[DevicesConfig]):
 
         * :class:`~tiny_pacs.events.Assoc` (when ``auto_add`` is enabled)
         * :class:`~tiny_pacs.events.DeviceByAE`
+        * :class:`~tiny_pacs.events.DeviceConfigs`
     """
 
     config_model = DevicesConfig
@@ -91,6 +92,7 @@ class Devices(component.Component[DevicesConfig]):
         if self.auto_add:
             self.subscribe(events.Assoc, self.add_device_from_asce)
         self.subscribe(events.DeviceByAE, self.device_by_ae)
+        self.subscribe(events.DeviceConfigs, self.configured_devices)
 
     @classmethod
     def interactive(cls) -> questions.Questionnaire:
@@ -128,6 +130,14 @@ class Devices(component.Component[DevicesConfig]):
         :rtype: DeviceConfig or None
         """
         return self.devices.get(_ae)
+
+    def configured_devices(self, _: None = None) -> dict[str, DeviceConfig]:
+        """Handles `DeviceConfigs` event
+
+        :return: copy of the configured devices keyed by AE title
+        :rtype: dict[str, DeviceConfig]
+        """
+        return dict(self.devices)
 
     def add_device_from_asce(self, payload: events.AssocPayload) -> None:
         """Handles `Assoc` event: registers the calling AE title.
