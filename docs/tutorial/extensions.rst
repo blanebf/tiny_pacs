@@ -136,7 +136,12 @@ it after parsing.
 
 Use :func:`tiny_pacs.__main__.add_common_arguments` for the shared
 ``-c/--config`` flags so third-party commands stay consistent with the
-built-ins.
+built-ins. Additional shared helpers keep subcommand output uniform:
+:func:`tiny_pacs.__main__.add_action_parser` adds an action subparser with
+the config flags and registers its handler,
+:func:`~tiny_pacs.__main__.format_table` renders plain-text tables and
+:func:`~tiny_pacs.__main__.fail` reports an error on stderr and exits with
+status 1 (the shared error contract of every subcommand).
 
 Registrations are isolated from the parser. Reserved subcommand names are
 ``run``, ``config`` (and argparse's ``help``); a plugin that tries to add

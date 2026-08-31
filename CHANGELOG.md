@@ -60,5 +60,33 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   configurable auto-add defaults) and the `devices`, `components` and
   `db` CLI subcommands for offline administration. See the
   "Administration: tiny-pacs-admin" tutorial page.
+- New first-party extension `tiny-pacs-identity` (0.1.0, depends on
+  `tiny-pacs-admin`): user management and association authentication.
+  The `Users` component keeps accounts in the database (salted scrypt
+  password hashes, with a PBKDF2 fallback); the `UserIdentityAuth`
+  component authenticates incoming associations via the DICOM User
+  Identity sub-item according to the calling device's identity policy
+  (`none`/`username`/`password`), with `default_policy` and
+  `unknown_device_policy` (plus `reject`) fallbacks, advisory
+  verification in `none` mode, an answered positive-response sub-item
+  (PS3.7 D.3.3.7.3) and rejection above the device registries, so
+  rejected associations are never auto-added. The `users` CLI subcommand
+  (`list`/`add`/`passwd`/`remove`/`set-active`) manages accounts offline
+  with `getpass` prompts. New `DeviceStore` event `AutoAddIdentity`
+  reports the auto-add policy so `UserIdentityAuth` can warn about
+  conflicting defaults at startup. See the "User identity:
+  tiny-pacs-identity" tutorial page.
+- `UserIdentityAuth` hardening: password verification timing is equalized
+  for unknown and inactive users (one proof per attempt, so rejections do
+  not reveal whether a username exists); when no `Users` component is
+  enabled the authentication fails closed with a startup error instead of
+  aborting associations with an event bus error. Password hashing follows
+  the OWASP cost guidance (scrypt `n=2**14, r=8, p=5`, PBKDF2 fallback at
+  600,000 iterations); `UserSetActive` requires a boolean `is_active` and
+  every user event normalizes the username identically.
+- Shared CLI helpers for subcommand extensions:
+  `__main__.add_action_parser`, `__main__.format_table`, `__main__.fail`
+  and the `SubParsers`/`CommandHandler` types — a single canonical error
+  contract and table output for every `tiny-pacs` subcommand.
 - Declared `[tool.poetry.extras]` `admin` and `identity`; the extension
   packages are wired into the extras once published.

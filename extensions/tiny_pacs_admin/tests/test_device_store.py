@@ -308,6 +308,18 @@ def test_remote_ae_never_carries_identity(admin_bus: Any) -> None:
     assert not hasattr(remote_ae, 'identity')
 
 
+def test_auto_add_identity_event(admin_bus: Any) -> None:
+    bus, _, _, _ = admin_bus(store_conf={'default_identity': 'password'})
+    policy = bus.send_any(admin_events.AutoAddIdentity, None)
+    assert policy == IdentityPolicy.PASSWORD
+
+
+def test_auto_add_identity_default(admin_bus: Any) -> None:
+    bus, _, _, _ = admin_bus()
+    policy = bus.send_any(admin_events.AutoAddIdentity, None)
+    assert policy == IdentityPolicy.NONE
+
+
 def test_config_model_validation() -> None:
     config = DeviceStoreConfig.model_validate(
         {'default_identity': 'password', 'default_port': 12345}

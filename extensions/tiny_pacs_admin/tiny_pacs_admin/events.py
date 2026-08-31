@@ -38,3 +38,15 @@ class DeviceRemove(trolleybus.Event[str, bool]):
 
     The result is whether the device existed (and was removed).
     """
+
+
+class AutoAddIdentity(
+    trolleybus.Event[None, models.IdentityPolicy | None]
+):
+    """Request the identity policy auto-added devices receive.
+
+    Answered by the :class:`~tiny_pacs_admin.store.DeviceStore` component
+    with its configured default; the result is None when no DB-backed
+    device registry participates, so consumers can detect whether
+    auto-added devices are persisted at all.
+    """

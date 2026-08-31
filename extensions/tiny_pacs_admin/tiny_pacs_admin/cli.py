@@ -9,38 +9,25 @@ import argparse
 import functools
 import json
 import sys
-from collections.abc import Callable, Iterable, Sequence
-from typing import Any, Protocol
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 from tiny_pacs import client as core_client
 from tiny_pacs import config as core_config
 from tiny_pacs import db as core_db
 from tiny_pacs import events as core_events
-from tiny_pacs.__main__ import add_common_arguments
+from tiny_pacs.__main__ import (
+    CommandHandler,
+    SubParsers,
+    add_action_parser,
+    fail,
+    format_table,
+)
 
 from . import events as admin_events
 from . import runtime
 from .models import DeviceModel, IdentityPolicy
 from .store import DeviceStore
-
-
-class SubParsers(Protocol):
-    """The subparsers facade passed to the registration callables."""
-
-    def add_parser(self, name: str,
-                   **kwargs: Any) -> argparse.ArgumentParser:
-        """Adds a subcommand parser."""
-        ...
-
-
-CommandHandler = Callable[[argparse.Namespace], None]
-
-
-def _fail(message: str) -> None:
-    """Reports a command error and exits."""
-    print(f'error: {message}', file=sys.stderr)
-    raise SystemExit(1)
 
 
 def _command(handler: CommandHandler) -> CommandHandler:
@@ -50,38 +37,8 @@ def _command(handler: CommandHandler) -> CommandHandler:
         try:
             handler(args)
         except (runtime.AdminError, ValueError) as error:
-            _fail(str(error))
+            fail(str(error))
     return wrapper
-
-
-def _add_action_parser(
-        actions: SubParsers, name: str, help_text: str,
-        handler: CommandHandler
-) -> argparse.ArgumentParser:
-    """Adds an action subparser with the shared config flags."""
-    action = actions.add_parser(name, help=help_text)
-    add_common_arguments(action)
-    action.set_defaults(command_handler=handler)
-    return action
-
-
-def _format_table(
-        headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
-    """Renders rows as a plain-text table."""
-    data = [[str(cell) for cell in row] for row in rows]
-    widths = [len(header) for header in headers]
-    for row in data:
-        for index, cell in enumerate(row):
-            widths[index] = max(widths[index], len(cell))
-
-    def line(cells: Sequence[str]) -> str:
-        return '  '.join(
-            cell.ljust(widths[index]) for index, cell in enumerate(cells)
-        ).rstrip()
-
-    lines = [line(headers), line(['-' * width for width in widths])]
-    lines.extend(line(row) for row in data)
-    return '\n'.join(lines)
 
 
 def register_devices(subparsers: SubParsers) -> None:
@@ -95,7 +52,7 @@ def register_devices(subparsers: SubParsers) -> None:
     actions = parser.add_subparsers(dest='action', required=True,
                                     metavar='ACTION')
 
-    list_parser = _add_action_parser(
+    list_parser = add_action_parser(
         actions, 'list', 'list the registered devices',
         devices_list_command
     )
@@ -104,7 +61,7 @@ def register_devices(subparsers: SubParsers) -> None:
         help='output format'
     )
 
-    add_parser = _add_action_parser(
+    add_parser = add_action_parser(
         actions, 'add', 'register a new device', devices_add_command
     )
     add_parser.add_argument('aet', help='remote AE title')
@@ -124,7 +81,7 @@ def register_devices(subparsers: SubParsers) -> None:
     add_parser.add_argument('--password', default=None,
                             help='outgoing identity password')
 
-    update_parser = _add_action_parser(
+    update_parser = add_action_parser(
         actions, 'update', 'update an existing device',
         devices_update_command
     )
@@ -143,12 +100,12 @@ def register_devices(subparsers: SubParsers) -> None:
     update_parser.add_argument('--password', default=None,
                                help='outgoing identity password')
 
-    remove_parser = _add_action_parser(
+    remove_parser = add_action_parser(
         actions, 'remove', 'remove a device', devices_remove_command
     )
     remove_parser.add_argument('aet', help='remote AE title')
 
-    echo_parser = _add_action_parser(
+    echo_parser = add_action_parser(
         actions, 'echo', 'check device connectivity with C-ECHO',
         devices_echo_command
     )
@@ -165,7 +122,7 @@ def register_components(subparsers: SubParsers) -> None:
     )
     actions = parser.add_subparsers(dest='action', required=True,
                                     metavar='ACTION')
-    _add_action_parser(
+    add_action_parser(
         actions, 'list',
         'list registered components with their origin and state',
         components_list_command
@@ -182,9 +139,9 @@ def register_db(subparsers: SubParsers) -> None:
     )
     actions = parser.add_subparsers(dest='action', required=True,
                                     metavar='ACTION')
-    _add_action_parser(actions, 'info',
-                       'show schema versions and table row counts',
-                       db_info_command)
+    add_action_parser(actions, 'info',
+                      'show schema versions and table row counts',
+                      db_info_command)
 
 
 def _device_data(row: DeviceModel) -> dict[str, Any]:
@@ -233,7 +190,7 @@ def devices_list_command(args: argparse.Namespace) -> None:
     elif args.format == 'yaml':
         sys.stdout.write(yaml.safe_dump(data, sort_keys=False))
     else:
-        print(_format_table(
+        print(format_table(
             ('AET', 'ADDRESS', 'PORT', 'IDENTITY'),
             [(device['aet'], device['address'], device['port'],
               device['identity']) for device in data]
@@ -270,7 +227,7 @@ def devices_remove_command(args: argparse.Namespace) -> None:
             bus, _):
         removed = bus.send_one(admin_events.DeviceRemove, args.aet)
     if not removed:
-        _fail(f'Unknown device {args.aet}')
+        fail(f'Unknown device {args.aet}')
     print(f'Removed device {args.aet}')
 
 
@@ -287,14 +244,14 @@ def devices_echo_command(args: argparse.Namespace) -> None:
                                ['Devices', DeviceStore.name()]) as (bus, _):
         device = bus.send_any(core_events.DeviceByAE, args.aet)
     if device is None:
-        _fail(f'Unknown device {args.aet}')
+        fail(f'Unknown device {args.aet}')
         return
     client = core_client.DICOMClient(local_aet, device)
     try:
         client.echo()
     except Exception as error:
         detail = str(error) or error.__class__.__name__
-        _fail(f'C-ECHO to {args.aet} failed: {detail}')
+        fail(f'C-ECHO to {args.aet} failed: {detail}')
         return
     print(f'C-ECHO to {args.aet} succeeded')
 
@@ -311,7 +268,7 @@ def components_list_command(args: argparse.Namespace) -> None:
                  if component_config is not None and component_config.on
                  else 'disabled')
         rows.append((name, core_config.get_component_origin(name), state))
-    print(_format_table(('NAME', 'ORIGIN', 'STATE'), rows))
+    print(format_table(('NAME', 'ORIGIN', 'STATE'), rows))
 
 
 @_command
@@ -334,9 +291,9 @@ def db_info_command(args: argparse.Namespace) -> None:
     print('Schema versions:')
     rows = [(version.component, version.version) for version in versions]
     if rows:
-        print(_format_table(('COMPONENT', 'VERSION'), rows))
+        print(format_table(('COMPONENT', 'VERSION'), rows))
     else:
         print('  (no schema versions recorded)')
     print()
     print('Row counts:')
-    print(_format_table(('TABLE', 'ROWS'), counts))
+    print(format_table(('TABLE', 'ROWS'), counts))

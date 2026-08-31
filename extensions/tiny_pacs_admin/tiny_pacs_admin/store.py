@@ -56,6 +56,7 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
         * :class:`~tiny_pacs_admin.events.DeviceAdd`
         * :class:`~tiny_pacs_admin.events.DeviceUpdate`
         * :class:`~tiny_pacs_admin.events.DeviceRemove`
+        * :class:`~tiny_pacs_admin.events.AutoAddIdentity`
     """
 
     config_model = DeviceStoreConfig
@@ -85,6 +86,7 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
         self.subscribe(admin_events.DeviceAdd, self.device_add)
         self.subscribe(admin_events.DeviceUpdate, self.device_update)
         self.subscribe(admin_events.DeviceRemove, self.device_remove)
+        self.subscribe(admin_events.AutoAddIdentity, self.auto_add_identity)
 
     def on_started(self) -> None:
         """Handles `OnStarted` event.
@@ -327,6 +329,14 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
         if deleted:
             self.log_info('Removed device %s', aet)
         return deleted
+
+    def auto_add_identity(self, _: None = None) -> IdentityPolicy:
+        """Handles `AutoAddIdentity` event
+
+        :return: identity policy assigned to auto-added devices
+        :rtype: IdentityPolicy
+        """
+        return self.config.default_identity
 
     def _payload_fields(
             self,

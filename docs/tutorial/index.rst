@@ -14,4 +14,5 @@ self-contained.
    extending
    extensions
    extensions-admin
+   extensions-identity
    migrations

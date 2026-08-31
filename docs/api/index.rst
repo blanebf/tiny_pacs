@@ -10,3 +10,4 @@ The API reference is auto-generated from the docstrings of the
 
    tiny_pacs
    tiny_pacs_admin
+   tiny_pacs_identity

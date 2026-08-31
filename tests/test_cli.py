@@ -1,3 +1,4 @@
+import argparse
 import sys
 from pathlib import Path
 
@@ -58,6 +59,40 @@ def test_parse_args_help() -> None:
 def test_parse_args_unknown_command() -> None:
     with pytest.raises(SystemExit):
         cli.parse_args(['frobnicate'])
+
+
+def test_fail_reports_error_and_exits(
+        capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.fail('boom')
+    assert excinfo.value.code == 1
+    assert 'error: boom' in capsys.readouterr().err
+
+
+def test_format_table_alignment() -> None:
+    table = cli.format_table(
+        ('NAME', 'ORIGIN'), [('Database', 'built-in'), ('x', 'tiny_pacs')]
+    )
+    assert table.splitlines() == [
+        'NAME      ORIGIN',
+        '--------  ---------',
+        'Database  built-in',
+        'x         tiny_pacs',
+    ]
+
+
+def test_add_action_parser_registers_handler() -> None:
+    parser = argparse.ArgumentParser()
+    actions = parser.add_subparsers(dest='action')
+
+    def handler(_args: argparse.Namespace) -> None:
+        pass
+
+    action = cli.add_action_parser(actions, 'list', 'list things', handler)
+    args = parser.parse_args(['list', '-c', 'conf.yaml'])
+    assert args.command_handler is handler
+    assert args.config == ['conf.yaml']
+    assert action.prog.endswith('list')
 
 
 def test_dump_yaml_roundtrip() -> None:

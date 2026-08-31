@@ -32,7 +32,9 @@ Features
   connection pooling
 * Storage backends: on-disk files, in-memory datasets or temporary files
 * TLS for incoming DICOM connections
-* DICOM user identity negotiation (username/password) for outgoing connections
+* DICOM user identity negotiation: credentials are presented on outgoing
+  connections; incoming associations are authenticated per device by the
+  optional ``tiny-pacs-identity`` extension
 * Interactive configuration wizard
 * YAML or JSON configuration files
 * Configuration is described with `pydantic <https://docs.pydantic.dev>`_
@@ -82,7 +84,10 @@ entry points. Install them with the convenience extras:
 ``tiny-pacs-admin`` adds a database-backed device registry (per-device
 identity policy, configurable auto-add defaults) and the ``devices``,
 ``components`` and ``db`` CLI subcommands for offline administration.
-Installing an extension never changes server behaviour on its own. See the
+``tiny-pacs-identity`` adds user management and authenticates incoming
+associations against the calling device's identity policy; it builds on
+the admin extension and adds the ``users`` subcommand. Installing an
+extension never changes server behaviour on its own. See the
 `documentation <https://tiny-pacs.readthedocs.io/>`_ for details.
 
 Quick start

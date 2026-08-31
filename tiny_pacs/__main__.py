@@ -2,8 +2,9 @@
 import argparse
 import logging
 import sys
+from collections.abc import Callable, Iterable, Sequence
 from importlib.metadata import entry_points
-from typing import Any
+from typing import Any, NoReturn, Protocol
 
 from . import config, interactive, server
 
@@ -122,6 +123,100 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
                         help='Provide configuration values interactively')
 
 
+class SubParsers(Protocol):
+    """The subparsers facade passed to plugin registration callables."""
+
+    def add_parser(
+            self,
+            name: str,
+            **kwargs: Any
+    ) -> argparse.ArgumentParser:
+        """Adds a subcommand parser."""
+        ...
+
+
+#: Execution function of a subcommand, registered through
+#: ``parser.set_defaults(command_handler=...)``
+CommandHandler = Callable[[argparse.Namespace], None]
+
+
+def fail(message: str) -> NoReturn:
+    """Reports a subcommand error and exits with status 1.
+
+    The shared error contract of every ``tiny-pacs`` subcommand: the
+    message is printed to stderr prefixed with ``error: `` and the
+    process exits with status 1.
+
+    :param message: error message shown to the user
+    :type message: str
+    :raises SystemExit: always, with status 1
+    """
+    print(f'error: {message}', file=sys.stderr)
+    raise SystemExit(1)
+
+
+def format_table(
+        headers: Sequence[str],
+        rows: Iterable[Sequence[Any]]
+) -> str:
+    """Renders rows as a column-aligned plain-text table.
+
+    Shared rendering for CLI output, so the built-in commands and
+    plugin subcommands stay visually consistent without adding a
+    dependency.
+
+    :param headers: column headers
+    :type headers: Sequence[str]
+    :param rows: table rows; cells are rendered with ``str()``
+    :type rows: Iterable[Sequence[Any]]
+    :return: rendered table
+    :rtype: str
+    """
+    data = [[str(cell) for cell in row] for row in rows]
+    widths = [len(header) for header in headers]
+    for row in data:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(cell))
+
+    def line(cells: Sequence[str]) -> str:
+        return '  '.join(
+            cell.ljust(widths[index]) for index, cell in enumerate(cells)
+        ).rstrip()
+
+    lines = [line(headers), line(['-' * width for width in widths])]
+    lines.extend(line(row) for row in data)
+    return '\n'.join(lines)
+
+
+def add_action_parser(
+        actions: SubParsers,
+        name: str,
+        help_text: str,
+        handler: CommandHandler
+) -> argparse.ArgumentParser:
+    """Adds an action subparser with the shared config flags.
+
+    Registers ``handler`` through
+    ``parser.set_defaults(command_handler=...)`` so :func:`main`
+    dispatches to it after parsing.
+
+    :param actions: subparsers facade to add the action to
+    :type actions: SubParsers
+    :param name: action name
+    :type name: str
+    :param help_text: short help of the action
+    :type help_text: str
+    :param handler: execution function of the action
+    :type handler: CommandHandler
+    :return: parser of the added action
+    :rtype: argparse.ArgumentParser
+    """
+    action = actions.add_parser(name, help=help_text)
+    add_common_arguments(action)
+    action.set_defaults(command_handler=handler)
+    return action
+
+
 def build_parser(load_plugins: bool = True) -> argparse.ArgumentParser:
     """Builds the command line parser with all subcommands.
 
@@ -181,9 +276,13 @@ class _PluginSubParsers:
     attribute access is forwarded to the wrapped action.
     """
 
-    def __init__(self, subparsers: argparse.Action,
-                 origins: dict[str, str], entry_point: str,
-                 logger: logging.Logger):
+    def __init__(
+            self,
+            subparsers: argparse.Action,
+            origins: dict[str, str],
+            entry_point: str,
+            logger: logging.Logger
+    ) -> None:
         self._subparsers = subparsers
         self._origins = origins
         self._entry_point = entry_point
@@ -192,8 +291,9 @@ class _PluginSubParsers:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._subparsers, name)
 
-    def add_parser(self, name: str, **kwargs: Any
-                   ) -> argparse.ArgumentParser:
+    def add_parser(
+            self, name: str, **kwargs: Any
+    ) -> argparse.ArgumentParser:
         """Adds a subcommand unless the name is reserved or already taken.
 
         Rejected registrations receive a detached parser: the plugin can
