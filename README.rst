@@ -215,8 +215,8 @@ models and validated when it is loaded, so unknown keys, wrong types or
 out-of-range values are rejected up front with a ``pydantic.ValidationError``
 instead of surfacing as obscure errors at runtime:
 
-* ``ae`` → :class:`tiny_pacs.config.AEConfig` (with an optional nested
-  :class:`tiny_pacs.config.TLSConfig`)
+* ``ae`` → ``tiny_pacs.config.AEConfig`` (with an optional nested
+  ``tiny_pacs.config.TLSConfig``)
 * each entry under ``components`` → the config model the corresponding
   component provides through its ``config_model`` attribute (see
   `Extending tiny_pacs`_)
@@ -230,13 +230,13 @@ Upgrading from the older dict-based configuration:
 * a component entry provided in a configuration source replaces any previous
   entry for that component wholesale — omitted fields fall back to the model
   defaults;
-* :class:`~tiny_pacs.config.Config` is a ``pydantic`` model, not a ``dict``:
+* ``tiny_pacs.config.Config`` is a ``pydantic`` model, not a ``dict``:
   use ``conf.ae``, ``conf.log``, ``conf.components`` and ``conf.model_dump()``;
-* device entries are :class:`~tiny_pacs.devices.DeviceConfig` models — e.g.
+* device entries are ``tiny_pacs.devices.DeviceConfig`` models — e.g.
   ``DICOMClient.remote_ae.username`` instead of ``remote_ae['username']``;
 * custom components must declare their config model (see
   `Extending tiny_pacs`_) and be registered via
-  :func:`tiny_pacs.config.register_component`.
+  ``tiny_pacs.config.register_component``.
 
 ``ae``
 ~~~~~~
@@ -400,8 +400,8 @@ Extending tiny_pacs
 Every component provides its own configuration as a ``pydantic`` model, and
 the config loader validates the raw ``components`` section against the model
 each component declares. To add your own component, subclass
-:class:`~tiny_pacs.component.Component` and declare a
-:class:`~tiny_pacs.component.ComponentConfig` subclass through the
+``tiny_pacs.component.Component`` and declare a
+``tiny_pacs.component.ComponentConfig`` subclass through the
 ``config_model`` attribute:
 
 .. code-block:: python
