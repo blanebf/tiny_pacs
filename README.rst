@@ -32,12 +32,16 @@ Features
   connection pooling
 * Storage backends: on-disk files, in-memory datasets or temporary files
 * TLS for incoming DICOM connections
-* DICOM user identity negotiation (username/password) for outgoing connections
+* DICOM user identity negotiation: credentials are presented on outgoing
+  connections; incoming associations are authenticated per device by the
+  optional ``tiny-pacs-identity`` extension
 * Interactive configuration wizard
 * YAML or JSON configuration files
 * Configuration is described with `pydantic <https://docs.pydantic.dev>`_
   models and validated at load time; each component supplies its own config
   model
+* Extensible through Python entry points: optional extension packages add
+  components and ``tiny-pacs`` CLI subcommands without core changes
 
 Requirements
 ------------
@@ -66,12 +70,93 @@ For development, with `Poetry <https://python-poetry.org/>`_:
     cd tiny_pacs
     poetry install
 
+Optional extensions
+-------------------
+
+Extensions are optional packages that plug into ``tiny_pacs`` through
+entry points. Every distribution is independently optional; ``identity``
+builds on ``admin``, so installing it pulls the admin extension in
+automatically. See the
+`documentation <https://tiny-pacs.readthedocs.io/>`_ for details.
+
+.. list-table:: Feature matrix
+   :header-rows: 1
+   :stub-columns: 1
+
+   * - Feature
+     - ``tiny_pacs`` (core)
+     - ``tiny-pacs-admin``
+     - ``tiny-pacs-identity``
+   * - DICOM SCP (C-ECHO, C-STORE, C-FIND/C-MOVE/C-GET, commitment)
+     - yes
+     -
+     -
+   * - Components: ``Database``, ``Devices``, ``PACS``, storage backends
+     - yes
+     -
+     -
+   * - ``run`` / ``config`` CLI + interactive wizard
+     - yes
+     -
+     -
+   * - Entry-point plugin API (components + CLI subcommands)
+     - yes
+     -
+     -
+   * - ``DeviceStore``: DB-backed device registry with a per-device
+       identity policy and configurable auto-add defaults
+     -
+     - yes
+     -
+   * - ``devices`` / ``components`` / ``db`` offline admin CLI
+     -
+     - yes
+     -
+   * - ``Users``: user accounts with salted password hashes in the DB
+     -
+     -
+     - yes
+   * - ``UserIdentityAuth``: association authentication driven by the
+       calling device's identity policy
+     -
+     -
+     - yes
+   * - ``users`` CLI (offline account management)
+     -
+     -
+     - yes
+
+Install matrix — the convenience extras pull the extension packages in,
+or install an extension directly with the same effect:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Command
+     - Installs
+   * - ``pip install tiny_pacs``
+     - the core server only
+   * - ``pip install tiny_pacs[admin]``
+     - core + ``tiny-pacs-admin``
+   * - ``pip install tiny_pacs[identity]``
+     - core + ``tiny-pacs-identity`` (pulls in ``tiny-pacs-admin``)
+   * - ``pip install tiny_pacs[admin,identity]``
+     - core + both extensions
+   * - ``pip install tiny-pacs-admin`` / ``pip install tiny-pacs-identity``
+     - the given extension (and the core) directly
+
+Installing an extension never changes server behaviour on its own: its
+components stay disabled until enabled in the configuration, and its CLI
+subcommands are additive.
+
 Quick start
 -----------
 
-The CLI provides two commands: ``run`` starts the server and ``config``
-generates a configuration file. Running ``tiny-pacs`` without a command is
-equivalent to ``tiny-pacs run``, so the traditional invocation keeps working.
+The CLI provides two built-in commands: ``run`` starts the server and
+``config`` generates or inspects a configuration file (``config show``
+dumps the effective configuration). Running ``tiny-pacs`` without a command
+is equivalent to ``tiny-pacs run``, so the traditional invocation keeps
+working. Extensions can add further subcommands.
 
 Start the server with the built-in defaults — AE title ``TINY_PACS``, port
 ``11112``, an in-memory SQLite database and in-memory storage:

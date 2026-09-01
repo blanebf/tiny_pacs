@@ -3,18 +3,61 @@ Installation
 
 ``tiny_pacs`` requires Python ``>= 3.10`` and works on any platform.
 
+Installing from PyPI
+--------------------
+
+The core and the first-party extensions are published as separate
+distributions (see :doc:`extensions`). Install the core alone or with the
+convenience extras:
+
+.. code-block:: bash
+
+    pip install tiny_pacs
+    pip install tiny_pacs[admin]          # admin CLI + DB device registry
+    pip install tiny_pacs[identity]       # user management + association auth
+    pip install tiny_pacs[admin,identity]
+
+This installs the ``tiny_pacs`` package together with the ``tiny-pacs``
+command-line script.
+
 Installing from git
 -------------------
 
-The package is not on PyPI yet, so install it straight from the git
+To follow the development state, install straight from the git
 repository:
 
 .. code-block:: bash
 
     pip install git+https://github.com/blanebf/tiny_pacs.git
 
-This installs the ``tiny_pacs`` package together with the ``tiny-pacs``
-command-line script.
+The extensions live in the same repository and are installed by
+subdirectory; install the core first, so their ``tiny_pacs`` requirement
+is already satisfied:
+
+.. code-block:: bash
+
+    pip install "git+https://github.com/blanebf/tiny_pacs.git#subdirectory=extensions/tiny_pacs_admin"
+    pip install "git+https://github.com/blanebf/tiny_pacs.git#subdirectory=extensions/tiny_pacs_identity"
+
+Optional extensions
+-------------------
+
+Extensions are optional, independently versioned packages that plug into
+``tiny_pacs`` through entry points (see :doc:`extensions`). The core
+provides convenience extras that pull them in:
+
+.. code-block:: bash
+
+    pip install tiny_pacs[admin]        # admin CLI + DB device registry
+    pip install tiny_pacs[identity]     # user management + association auth
+    pip install tiny_pacs[admin,identity]
+
+An extension can also be installed directly (``pip install
+tiny-pacs-admin``); the effect is identical. ``tiny-pacs-identity`` builds
+on the device registry, so installing it pulls ``tiny-pacs-admin`` in
+automatically. Installing an extension alone never changes server
+behaviour — its components stay disabled until enabled in the
+configuration, and its CLI subcommands are additive.
 
 Verifying the installation
 --------------------------

@@ -1,16 +1,123 @@
 name: Publish to PyPI
 
+# Builds and publishes the distributions of this repository: tiny_pacs
+# (core), tiny_pacs_admin and tiny_pacs_identity — one job per
+# distribution, parameterized by package path.
+#
+# Publishing uses trusted publishing (PyPI OpenID Connect): each PyPI
+# project must be configured to trust this workflow; no API tokens are
+# stored here.
+#
+# A GitHub release publishes the single distribution matching the release
+# tag — <distribution-name>-<version>, e.g. tiny_pacs-0.3.0 (a leading
+# 'v' is allowed) — which must equal the version in the distribution's
+# pyproject.toml. Use workflow_dispatch to publish several or all
+# distributions in one run. Already-uploaded files are skipped, so
+# re-running a partially failed workflow is safe.
+#
+# Publishing happens in dependency order (core, then admin, then
+# identity), so every uploaded distribution's requirements already exist
+# on PyPI.
+#
+# The core's extras point at the bundled extension packages through local
+# paths; scripts/prepare_publish.py rewrites them to version constraints
+# before the core is built, as PyPI rejects dependencies on local paths.
+
 on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      package:
+        description: Distribution to publish
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - tiny_pacs
+          - tiny_pacs_admin
+          - tiny_pacs_identity
 
 permissions:
   contents: read
 
+env:
+  ALL_PACKAGES: >-
+    [{"name": "tiny_pacs", "path": "."},
+    {"name": "tiny_pacs_admin", "path": "extensions/tiny_pacs_admin"},
+    {"name": "tiny_pacs_identity",
+    "path": "extensions/tiny_pacs_identity"}]
+
 jobs:
-  build:
+  select:
+    name: Select distributions
     runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.select.outputs.packages }}
+      core: ${{ steps.select.outputs.core }}
+      admin: ${{ steps.select.outputs.admin }}
+      identity: ${{ steps.select.outputs.identity }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Choose the distributions to publish
+        id: select
+        env:
+          PACKAGE: ${{ github.event.inputs.package }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ -n "$TAG" ]; then
+            # Release event: the tag selects exactly one distribution,
+            # formatted <distribution-name>-<version>, and the version
+            # must match the distribution's pyproject.toml.
+            tag=${TAG#v}
+            packages='[]'
+            while read -r name path; do
+              version=$(sed -n 's/^version = "\(.*\)"$/\1/p' \
+                "$path/pyproject.toml" | head -n 1)
+              if [ "$tag" = "$name-$version" ]; then
+                packages=$(echo "$ALL_PACKAGES" | jq -c \
+                  --arg name "$name" 'map(select(.name == $name))')
+              fi
+            done <<< "$(echo "$ALL_PACKAGES" \
+              | jq -r '.[] | "\(.name) \(.path)"')"
+            if [ "$packages" = '[]' ]; then
+              echo "Release tag '$TAG' does not match any distribution" \
+                   "as '<distribution-name>-<version>'" >&2
+              exit 1
+            fi
+          elif [ -z "$PACKAGE" ] || [ "$PACKAGE" = all ]; then
+            packages=$ALL_PACKAGES
+          else
+            packages=$(echo "$ALL_PACKAGES" | jq -c \
+              --arg name "$PACKAGE" 'map(select(.name == $name))')
+          fi
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          for name in tiny_pacs tiny_pacs_admin tiny_pacs_identity; do
+            selected=false
+            if echo "$packages" | jq -e \
+                --arg name "$name" 'any(.[]; .name == $name)' \
+                > /dev/null; then
+              selected=true
+            fi
+            case $name in
+              tiny_pacs) key=core ;;
+              tiny_pacs_admin) key=admin ;;
+              tiny_pacs_identity) key=identity ;;
+            esac
+            echo "$key=$selected" >> "$GITHUB_OUTPUT"
+          done
+          echo "Publishing: $(echo "$packages" | jq -c 'map(.name)')"
+
+  build:
+    name: Build ${{ matrix.package.name }}
+    needs: select
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.select.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,29 +128,80 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          cache: poetry
+
+      - name: Rewrite local extension dependencies
+        if: matrix.package.name == 'tiny_pacs'
+        run: python scripts/prepare_publish.py
 
       - name: Build package
+        working-directory: ${{ matrix.package.path }}
         run: poetry build
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: dist/
+          name: dist-${{ matrix.package.name }}
+          path: >-
+            ${{ matrix.package.path == '.' && 'dist/'
+            || format('{0}/dist/', matrix.package.path) }}
           if-no-files-found: error
 
-  publish:
-    needs: build
+  # Ordered by dependency so every uploaded distribution's requirements
+  # already exist on PyPI: core, then admin, then identity. A failed or
+  # skipped job only blocks its dependents on failure.
+  publish-core:
+    name: Publish tiny_pacs
+    needs: [select, build]
     runs-on: ubuntu-latest
+    if: needs.select.outputs.core == 'true'
     permissions:
       id-token: write
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist-tiny_pacs
           path: dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  publish-admin:
+    name: Publish tiny_pacs_admin
+    needs: [select, build, publish-core]
+    runs-on: ubuntu-latest
+    if: needs.select.outputs.admin == 'true'
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-tiny_pacs_admin
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  publish-identity:
+    name: Publish tiny_pacs_identity
+    needs: [select, build, publish-admin]
+    runs-on: ubuntu-latest
+    if: needs.select.outputs.identity == 'true'
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-tiny_pacs_identity
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

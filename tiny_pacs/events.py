@@ -216,6 +216,17 @@ class DeviceByAE(trolleybus.Event[str, 'devices.DeviceConfig | None']):
     """Request device settings by AE Title."""
 
 
+class DeviceConfigs(
+    trolleybus.Event[None, "dict[str, 'devices.DeviceConfig']"]
+):
+    """Request the configured remote devices.
+
+    Answered by device registry components with a mapping of AE titles to
+    device configurations, e.g. so database-backed registries can import
+    the YAML-configured devices.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Client events
 # ---------------------------------------------------------------------------

@@ -13,3 +13,7 @@ python:
     - requirements: docs/requirements.txt
     - method: pip
       path: .
+    - method: pip
+      path: extensions/tiny_pacs_admin
+    - method: pip
+      path: extensions/tiny_pacs_identity

@@ -7,11 +7,17 @@ per-component configurations. Every component declares its own
 configuration model via
 :attr:`~tiny_pacs.component.Component.config_model`, and the config loader
 validates the raw component configuration against that model at load time.
+
+Additional components are discovered from the ``tiny_pacs.components``
+entry point group (:func:`load_component_plugins`) on the first
+:class:`Config` construction, so any installed extension package can
+contribute components without core configuration.
 """
 import copy
 import json
 import logging
 import os
+from importlib.metadata import entry_points
 from typing import IO, Any, TypeAlias
 
 import pydantic
@@ -106,22 +112,120 @@ COMPONENT_REGISTRY: dict[str, type[component.Component[Any]]] = {
     'TempFileStorage': storage.TempFileStorage
 }
 
+#: Origin of every registered component: ``built-in``, ``registered``
+#: (added programmatically via :func:`register_component`) or the name of
+#: the distribution providing the component through a
+#: :data:`COMPONENTS_GROUP` entry point
+COMPONENT_ORIGINS: dict[str, str] = dict.fromkeys(COMPONENT_REGISTRY,
+                                                  'built-in')
+
+#: Entry point group advertising component classes. Every distribution
+#: installed into the environment may declare ``name = module:Component``
+#: entries here; the entry point name becomes the component's name in the
+#: ``components`` configuration section.
+COMPONENTS_GROUP = 'tiny_pacs.components'
+
+_plugins_loaded = False
+
 
 def register_component(
-        name: str, factory: type[component.Component[Any]]
+        name: str, factory: type[component.Component[Any]],
+        origin: str = 'registered'
 ) -> None:
     """Registers a component class.
 
     Registered components become available in the ``components`` config
     section; their configuration is validated against the model declared via
-    :attr:`~tiny_pacs.component.Component.config_model`.
+    :attr:`~tiny_pacs.component.Component.config_model`. A component
+    registered under an existing name replaces the previous one, so a
+    programmatic registration always wins over built-ins and entry-point
+    plugins alike.
 
     :param name: component name used in configuration files
     :type name: str
     :param factory: component class
     :type factory: type[component.Component]
+    :param origin: where the component comes from; recorded in
+                   :data:`COMPONENT_ORIGINS`, defaults to ``registered``
+    :type origin: str
     """
     COMPONENT_REGISTRY[name] = factory
+    COMPONENT_ORIGINS[name] = origin
+
+
+def get_component_origin(name: str) -> str:
+    """Returns the origin of a registered component.
+
+    :param name: component name
+    :type name: str
+    :return: ``built-in``, ``registered`` or the name of the distribution
+             providing the component through an entry point
+    :rtype: str
+    """
+    return COMPONENT_ORIGINS.get(name, 'registered')
+
+
+def load_component_plugins() -> None:
+    """Registers components discovered from entry points. Runs once.
+
+    Components are discovered from the :data:`COMPONENTS_GROUP` entry point
+    group; any installed distribution — first-party or third-party — may
+    contribute. Entry points are loaded lazily, so extension modules are
+    only imported when discovery runs. Broken entry points and entries that
+    are not :class:`~tiny_pacs.component.Component` subclasses are logged
+    and skipped, they never break the configuration loader.
+
+    Precedence: an entry point named like a built-in component replaces
+    that built-in (logged at INFO); when two distributions advertise the
+    same name the last-loaded one wins (logged at WARNING); a programmatic
+    :func:`register_component` call always wins over installed plugins,
+    regardless of when it runs.
+    """
+    global _plugins_loaded
+    if _plugins_loaded:
+        return
+    _plugins_loaded = True
+    logger = logging.getLogger('tiny_pacs.config')
+    for ep in entry_points(group=COMPONENTS_GROUP):
+        try:
+            factory = ep.load()
+        except KeyboardInterrupt:
+            raise
+        except BaseException:
+            logger.exception(
+                'Failed to load component entry point %r, skipping', ep.name
+            )
+            continue
+        if not (isinstance(factory, type)
+                and issubclass(factory, component.Component)):
+            logger.error(
+                'Entry point %r is not a Component subclass, skipping',
+                ep.name
+            )
+            continue
+        dist_name = ep.dist.name if ep.dist is not None else 'unknown'
+        if COMPONENT_ORIGINS.get(ep.name) == 'registered':
+            # Programmatic register_component() calls always win over
+            # installed plugins, regardless of their timing
+            logger.info(
+                'Component %r was registered programmatically, the entry '
+                'point provided by %s is ignored', ep.name, dist_name
+            )
+            continue
+        if ep.name in COMPONENT_REGISTRY:
+            if COMPONENT_ORIGINS.get(ep.name) == 'built-in':
+                logger.info(
+                    'Component %r: the built-in implementation is replaced '
+                    'by %s', ep.name, dist_name
+                )
+            else:
+                logger.warning(
+                    'Component name %r is provided by both %s and %s; '
+                    '%s wins', ep.name,
+                    COMPONENT_ORIGINS.get(ep.name, 'registered'), dist_name,
+                    dist_name
+                )
+        register_component(ep.name, factory, dist_name)
 
 
 #: Components used when no components are configured at all
@@ -134,6 +238,9 @@ DEFAULT_COMPONENTS: dict[str, dict[str, Any]] = {
 
 DEFAULT_LOG_CONF = {
     'version': 1,
+    # Keep loggers created before ``dictConfig`` runs (e.g. the config
+    # loader's own logger during plugin discovery) working
+    'disable_existing_loggers': False,
     'formatters': {
         'simple': {
             'format': ('%(asctime)s - %(levelname)-8s - '
@@ -232,6 +339,14 @@ class Config(pydantic.BaseModel):
     components: dict[str, component.ComponentConfig] = pydantic.Field(
         default_factory=_default_components
     )
+
+    @pydantic.model_validator(mode='before')
+    @classmethod
+    def _load_component_plugins(cls, data: Any) -> Any:
+        # Plugin components must be registered before any ``components``
+        # section is validated against the registry
+        load_component_plugins()
+        return data
 
     @pydantic.field_validator('components', mode='before')
     @classmethod

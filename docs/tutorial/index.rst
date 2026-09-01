@@ -12,4 +12,7 @@ self-contained.
    configuration
    running
    extending
+   extensions
+   extensions-admin
+   extensions-identity
    migrations

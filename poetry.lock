@@ -1283,6 +1283,39 @@ standalone = ["Sphinx (>=5)"]
 test = ["pytest"]
 
 [[package]]
+name = "tiny-pacs-admin"
+version = "0.1.0"
+description = "Admin CLI and DB-backed device registry for tiny_pacs"
+optional = true
+python-versions = ">=3.10,<4.0"
+files = []
+develop = false
+
+[package.dependencies]
+tiny_pacs = ">=0.3,<0.4"
+
+[package.source]
+type = "directory"
+url = "extensions/tiny_pacs_admin"
+
+[[package]]
+name = "tiny-pacs-identity"
+version = "0.1.0"
+description = "User management and DICOM user identity authentication for tiny_pacs"
+optional = true
+python-versions = ">=3.10,<4.0"
+files = []
+develop = false
+
+[package.dependencies]
+tiny_pacs = ">=0.3,<0.4"
+tiny_pacs_admin = ">=0.1,<0.2"
+
+[package.source]
+type = "directory"
+url = "extensions/tiny_pacs_identity"
+
+[[package]]
 name = "tomli"
 version = "2.4.1"
 description = "A lil' TOML parser"
@@ -1391,7 +1424,11 @@ h2 = ["h2 (>=4,<5)"]
 socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["backports-zstd (>=1.0.0)"]
 
+[extras]
+admin = ["tiny-pacs-admin"]
+identity = ["tiny-pacs-identity"]
+
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<4.0"
-content-hash = "1494e301e4031ff7bed69f53809c94fd7436e8106886e954032c8e0678c94235"
+content-hash = "9899e294a934e76694a9ca0da404cdb7971cf20a3b424b88d5164c1886dc743e"
