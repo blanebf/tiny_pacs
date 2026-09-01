@@ -30,9 +30,10 @@ or with the convenience extra:
 
     pip install tiny_pacs[identity]
 
-The effect is identical; the extras are wired to the published extension
-distributions, so until ``tiny-pacs-identity`` is published on PyPI,
-install the extension directly from the repository.
+The effect is identical. From PyPI the extras pull the published
+extension distributions; when installing the core from the repository
+they resolve against the bundled extension packages — see
+:doc:`installation` for both routes.
 
 Installing the extension never changes server behaviour: both components
 stay disabled until enabled in the configuration.

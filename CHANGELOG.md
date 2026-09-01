@@ -88,5 +88,16 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   `__main__.add_action_parser`, `__main__.format_table`, `__main__.fail`
   and the `SubParsers`/`CommandHandler` types — a single canonical error
   contract and table output for every `tiny-pacs` subcommand.
-- Declared `[tool.poetry.extras]` `admin` and `identity`; the extension
-  packages are wired into the extras once published.
+- Convenience extras: `pip install tiny_pacs[admin]` installs
+  `tiny-pacs-admin`, `pip install tiny_pacs[identity]` installs
+  `tiny-pacs-identity` (which pulls in `tiny-pacs-admin` automatically),
+  and `tiny_pacs[admin,identity]` installs both. When installing the core
+  from the repository itself, the extras resolve against the bundled
+  extension packages.
+- Release automation: CI runs linting, type checks and tests per package
+  (core and each extension across Python 3.10–3.14) plus an integration
+  job that installs all three distributions from the repository and
+  verifies the entry-point discovery end to end. The publish workflow
+  builds and publishes the distribution matching the release tag
+  (`<distribution-name>-<version>`, or a chosen set on demand) in
+  dependency order via PyPI trusted publishing.

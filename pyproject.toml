@@ -34,6 +34,13 @@ peewee = "^4.3"
 PyYAML = "^6.0"
 trolleybus = "^0.2.0"
 pydantic = "^2.13.4"
+# The optional extension distributions behind the extras below. They
+# reference the packages bundled in this repository, so the extras resolve
+# without the extensions being published yet; scripts/prepare_publish.py
+# rewrites the paths to version constraints before the core is built for
+# PyPI, which rejects dependencies on local paths.
+tiny-pacs-admin = { path = "extensions/tiny_pacs_admin", optional = true }
+tiny-pacs-identity = { path = "extensions/tiny_pacs_identity", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"
@@ -46,11 +53,13 @@ sphinx = "^7.2"
 sphinx-rtd-theme = "^3.0"
 
 [tool.poetry.extras]
-# Convenience extras pulling the optional extension distributions in. The
-# extension packages are wired here once they are published; installing an
-# extra that lists nothing yet only installs the core.
-admin = []
-identity = []
+# Convenience extras pulling the optional extension distributions in:
+# pip install tiny_pacs[admin], tiny_pacs[identity] or
+# tiny_pacs[admin,identity]. In the repository they resolve against the
+# bundled packages; scripts/prepare_publish.py turns that into version
+# constraints on the published distributions for PyPI builds.
+admin = ["tiny-pacs-admin"]
+identity = ["tiny-pacs-identity"]
 
 [tool.poetry.scripts]
 tiny-pacs = "tiny_pacs.__main__:main"
