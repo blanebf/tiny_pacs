@@ -147,23 +147,27 @@ jobs:
           if-no-files-found: error
 
   # Ordered by dependency so every uploaded distribution's requirements
-  # already exist on PyPI: core, then admin, then identity. A failed or
-  # skipped job only blocks its dependents on failure.
+  # already exist on PyPI: core, then admin, then identity. The gate is
+  # on the steps, not the jobs: GitHub Actions skips every job that
+  # needs a skipped job, so an unselected distribution must run its job
+  # as a successful no-op or the whole chain after it would be skipped.
+  # A failed job still blocks its dependents.
   publish-core:
     name: Publish tiny_pacs
     needs: [select, build]
     runs-on: ubuntu-latest
-    if: needs.select.outputs.core == 'true'
     permissions:
       id-token: write
     steps:
       - name: Download dist artifacts
+        if: needs.select.outputs.core == 'true'
         uses: actions/download-artifact@v4
         with:
           name: dist-tiny_pacs
           path: dist/
 
       - name: Publish to PyPI
+        if: needs.select.outputs.core == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
@@ -172,17 +176,18 @@ jobs:
     name: Publish tiny_pacs_admin
     needs: [select, build, publish-core]
     runs-on: ubuntu-latest
-    if: needs.select.outputs.admin == 'true'
     permissions:
       id-token: write
     steps:
       - name: Download dist artifacts
+        if: needs.select.outputs.admin == 'true'
         uses: actions/download-artifact@v4
         with:
           name: dist-tiny_pacs_admin
           path: dist/
 
       - name: Publish to PyPI
+        if: needs.select.outputs.admin == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
@@ -191,17 +196,18 @@ jobs:
     name: Publish tiny_pacs_identity
     needs: [select, build, publish-admin]
     runs-on: ubuntu-latest
-    if: needs.select.outputs.identity == 'true'
     permissions:
       id-token: write
     steps:
       - name: Download dist artifacts
+        if: needs.select.outputs.identity == 'true'
         uses: actions/download-artifact@v4
         with:
           name: dist-tiny_pacs_identity
           path: dist/
 
       - name: Publish to PyPI
+        if: needs.select.outputs.identity == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
