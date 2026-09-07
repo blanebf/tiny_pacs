@@ -19,7 +19,7 @@ Within a core minor series (e.g. ``0.3.x``) the following never break:
 * everything documented in :mod:`tiny_pacs.events`,
   :mod:`tiny_pacs.schema` and the API reference;
 * the CLI helpers :func:`tiny_pacs.__main__.add_common_arguments` and the
-  headless admin runtime.
+  headless admin runtime :func:`tiny_pacs.admin.admin_context`.
 
 Breaking changes land in a new minor series and are announced in the
 changelog together with a migration note. Extensions pin the core minor

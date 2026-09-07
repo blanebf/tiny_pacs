@@ -3,7 +3,7 @@
 Registers the ``devices``, ``components`` and ``db`` subcommands of the
 ``tiny-pacs`` CLI through the ``tiny_pacs.cli`` entry point group. Every
 command takes the shared ``-c/--config`` flags and works offline against
-the configured database (see :mod:`tiny_pacs_admin.runtime`).
+the configured database (see :func:`tiny_pacs.admin.admin_context`).
 """
 import argparse
 import functools
@@ -14,7 +14,6 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 from tiny_pacs import client as core_client
 from tiny_pacs import config as core_config
-from tiny_pacs import db as core_db
 from tiny_pacs import events as core_events
 from tiny_pacs.__main__ import (
     CommandHandler,
@@ -23,10 +22,10 @@ from tiny_pacs.__main__ import (
     fail,
     format_table,
 )
+from tiny_pacs.admin import AdminError, admin_context
+from tiny_pacs.identity import IdentityPolicy
 
-from . import events as admin_events
-from . import runtime
-from .models import DeviceModel, IdentityPolicy
+from .models import DeviceModel
 from .store import DeviceStore
 
 
@@ -36,7 +35,7 @@ def _command(handler: CommandHandler) -> CommandHandler:
     def wrapper(args: argparse.Namespace) -> None:
         try:
             handler(args)
-        except (runtime.AdminError, ValueError) as error:
+        except (AdminError, ValueError) as error:
             fail(str(error))
     return wrapper
 
@@ -181,9 +180,9 @@ def _device_payload(args: argparse.Namespace) -> dict[str, Any]:
 @_command
 def devices_list_command(args: argparse.Namespace) -> None:
     """Lists the registered devices."""
-    with runtime.admin_context(args.config, [DeviceStore.name()]) as (
+    with admin_context(args.config, [DeviceStore.name()]) as (
             bus, _):
-        rows = bus.send_one(admin_events.DeviceList, None)
+        rows = bus.send_one(core_events.DeviceList, None)
     data = [_device_data(row) for row in rows]
     if args.format == 'json':
         print(json.dumps(data, indent=2, default=str))
@@ -202,9 +201,9 @@ def devices_add_command(args: argparse.Namespace) -> None:
     """Registers a new device."""
     payload = _device_payload(args)
     payload['address'] = args.address
-    with runtime.admin_context(args.config, [DeviceStore.name()]) as (
+    with admin_context(args.config, [DeviceStore.name()]) as (
             bus, _):
-        row = bus.send_one(admin_events.DeviceAdd, payload)
+        row = bus.send_one(core_events.DeviceAdd, payload)
     print(f'Added device {row.aet} ({row.address}:{row.port}, '
           f'identity: {row.identity})')
 
@@ -213,9 +212,9 @@ def devices_add_command(args: argparse.Namespace) -> None:
 def devices_update_command(args: argparse.Namespace) -> None:
     """Updates an existing device."""
     payload = _device_payload(args)
-    with runtime.admin_context(args.config, [DeviceStore.name()]) as (
+    with admin_context(args.config, [DeviceStore.name()]) as (
             bus, _):
-        row = bus.send_one(admin_events.DeviceUpdate, payload)
+        row = bus.send_one(core_events.DeviceUpdate, payload)
     print(f'Updated device {row.aet} ({row.address}:{row.port}, '
           f'identity: {row.identity})')
 
@@ -223,9 +222,9 @@ def devices_update_command(args: argparse.Namespace) -> None:
 @_command
 def devices_remove_command(args: argparse.Namespace) -> None:
     """Removes a device."""
-    with runtime.admin_context(args.config, [DeviceStore.name()]) as (
+    with admin_context(args.config, [DeviceStore.name()]) as (
             bus, _):
-        removed = bus.send_one(admin_events.DeviceRemove, args.aet)
+        removed = bus.send_one(core_events.DeviceRemove, args.aet)
     if not removed:
         fail(f'Unknown device {args.aet}')
     print(f'Removed device {args.aet}')
@@ -240,8 +239,8 @@ def devices_echo_command(args: argparse.Namespace) -> None:
     local_aet = ae_title[0] if isinstance(ae_title, list) else ae_title
     # Resolve the device like the server does: the DB-backed registry
     # first, the in-memory registry as a fallback.
-    with runtime.admin_context(args.config,
-                               ['Devices', DeviceStore.name()]) as (bus, _):
+    with admin_context(args.config,
+                       ['Devices', DeviceStore.name()]) as (bus, _):
         device = bus.send_any(core_events.DeviceByAE, args.aet)
     if device is None:
         fail(f'Unknown device {args.aet}')
@@ -274,26 +273,15 @@ def components_list_command(args: argparse.Namespace) -> None:
 @_command
 def db_info_command(args: argparse.Namespace) -> None:
     """Shows schema versions and table row counts."""
-    with runtime.admin_context(args.config) as (_, database):
-        versions = core_db.SchemaVersion.select().order_by(
-            core_db.SchemaVersion.component
-        )
-        db_obj = database.db
-        assert db_obj is not None
-        counts: list[tuple[str, int]] = []
-        for table in sorted(db_obj.get_tables()):
-            cursor = db_obj.execute_sql(
-                f'SELECT COUNT(*) FROM "{table}"'
-            )
-            row = cursor.fetchone()
-            assert row is not None
-            counts.append((table, int(row[0])))
+    with admin_context(args.config) as (bus, _):
+        versions = bus.send_one(core_events.SchemaVersions, None)
+        counts = bus.send_one(core_events.TableCounts, None)
     print('Schema versions:')
-    rows = [(version.component, version.version) for version in versions]
+    rows = sorted(versions.items())
     if rows:
         print(format_table(('COMPONENT', 'VERSION'), rows))
     else:
         print('  (no schema versions recorded)')
     print()
     print('Row counts:')
-    print(format_table(('TABLE', 'ROWS'), counts))
+    print(format_table(('TABLE', 'ROWS'), sorted(counts.items())))

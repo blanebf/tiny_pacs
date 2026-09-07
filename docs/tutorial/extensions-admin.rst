@@ -237,4 +237,5 @@ Reference implementation
 extension contract described in :doc:`extensions`: a component published
 through ``tiny_pacs.components`` (with its own tables and
 :class:`~tiny_pacs.events.Migrations`), CLI subcommands published through
-``tiny_pacs.cli``, and the headless admin runtime used by all of them.
+``tiny_pacs.cli``, and the headless admin runtime
+(:func:`tiny_pacs.admin.admin_context`) used by all of them.

@@ -1,10 +1,13 @@
-"""Headless admin runtime.
+"""Headless administration runtime.
 
-Administration commands work offline: the runtime loads the YAML
+Administration commands work offline: :func:`admin_context` loads the YAML
 configuration, builds an event bus with the ``Database`` component plus
 the components being managed, starts the bus (fires ``OnStart``: DB init,
 table binding, migrations) and stops it afterwards. No AE/server thread
 is started.
+
+This helper is part of the documented extension-facing API: every
+CLI-bearing extension runs its commands through it.
 
 Administration against SQLite requires a file-based database
 (``db_name`` with ``mode: rwc``); the in-memory default cannot persist
@@ -16,7 +19,8 @@ from contextlib import contextmanager
 from typing import Any
 
 import trolleybus
-from tiny_pacs import config, db
+
+from . import config, db
 
 
 class AdminError(Exception):

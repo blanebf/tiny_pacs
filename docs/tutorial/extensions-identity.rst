@@ -13,9 +13,12 @@ The extension contributes two components:
 * ``UserIdentityAuth`` — enforces the identity policies on incoming
   associations.
 
-It depends on ``tiny-pacs-admin``: the identity policy is part of the
-device record (see :doc:`extensions-admin`), so installing
-``tiny-pacs-identity`` pulls the device registry in automatically.
+It depends on the core only: the identity policy vocabulary
+(:class:`tiny_pacs.identity.IdentityPolicy`) and the user management
+events (:class:`~tiny_pacs.events.UserByName`,
+:class:`~tiny_pacs.events.UserVerify` and friends) live in
+``tiny_pacs``, and device registries are reached through the core
+device events — there is no dependency on ``tiny-pacs-admin``.
 
 Installation
 ------------

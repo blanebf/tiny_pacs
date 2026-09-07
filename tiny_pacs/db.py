@@ -107,6 +107,8 @@ class Database(component.Component[DatabaseConfig]):
         super().__init__(bus, config)
         self.subscribe(events.Atomic, self.atomic)
         self.subscribe(events.StringAgg, self.string_agg_func)
+        self.subscribe(events.SchemaVersions, self.schema_versions)
+        self.subscribe(events.TableCounts, self.table_counts)
         self.db: peewee.Database | None = None
 
     @classmethod
@@ -201,6 +203,36 @@ class Database(component.Component[DatabaseConfig]):
         if isinstance(self.db, peewee.PostgresqlDatabase):
             return peewee.fn.string_agg
         raise ValueError(f'Unexpected DB object {self.db}')
+
+    def schema_versions(self, _: None = None) -> dict[str, int]:
+        """Handles `SchemaVersions` event.
+
+        :return: applied schema version of every component
+        :rtype: dict[str, int]
+        :raises RuntimeError: raised when the database is not initialized
+        """
+        if self.db is None:
+            raise RuntimeError('Database is not initialized')
+        return {
+            row.component: row.version
+            for row in SchemaVersion.select()
+        }
+
+    def table_counts(self, _: None = None) -> dict[str, int]:
+        """Handles `TableCounts` event.
+
+        :return: row count of every table of the database
+        :rtype: dict[str, int]
+        :raises RuntimeError: raised when the database is not initialized
+        """
+        if self.db is None:
+            raise RuntimeError('Database is not initialized')
+        counts: dict[str, int] = {}
+        for table in sorted(self.db.get_tables()):
+            cursor = self.db.execute_sql(f'SELECT COUNT(*) FROM "{table}"')
+            row = cursor.fetchone()
+            counts[table] = int(row[0]) if row is not None else 0
+        return counts
 
     def _init_sqlite(self) -> peewee.SqliteDatabase:
         """Initializes SQLite database."""

@@ -10,7 +10,7 @@ import socketserver
 import ssl
 from collections.abc import Iterable, Iterator
 from itertools import chain
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 
 import pydicom
 import trolleybus
@@ -18,6 +18,7 @@ from pydicom import uid
 from pynetdicom2 import (
     applicationentity,
     asceprovider,
+    dimsemessages,
     exceptions,
     fsm,
     pdu,
@@ -25,7 +26,7 @@ from pynetdicom2 import (
     statuses,
 )
 
-from . import events, services
+from . import assoc_context, events, services
 from .config import AEConfig, TLSConfig
 
 
@@ -86,6 +87,32 @@ class _TLSThreadingTCPServer(socketserver.ThreadingTCPServer):
         super().process_request_thread(request, client_address)
 
 
+class _ThreadingTCPServer(socketserver.ThreadingTCPServer):
+    """Threading TCP server with the defaults used by DICOM SCPs."""
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+class _RequestHandler(applicationentity.RequestHandler):
+    """Request handler that notifies the AE when an association ends.
+
+    ``AssociationAcceptor.handle`` runs the whole association lifecycle
+    on the connection thread; wrapping it here gives the AE a teardown
+    hook for every exit path (release, abort, timeout or error), which
+    closes the association context and broadcasts
+    :class:`~tiny_pacs.events.AssocReleased`.
+    """
+
+    def handle(self) -> None:
+        try:
+            super().handle()
+        finally:
+            local_ae = getattr(self.asce, 'ae', None)
+            on_end = getattr(local_ae, 'on_association_end', None)
+            if callable(on_end):
+                on_end(self.asce)
+
+
 class AE(applicationentity.AE):
     """Application Entity with SCP implementations.
 
@@ -139,25 +166,78 @@ class AE(applicationentity.AE):
         self.add_scp(services.qr_get_scp)
         self.add_scp(sopclass.storage_scp)
         self.add_scp(sopclass.StorageCommitment())
+
+        #: Service hooks contributed through
+        #: :class:`~tiny_pacs.events.ServicesRegistry`, indexed by the
+        #: abstract syntax they serve
+        self.find_hooks: dict[uid.UID, events.ServiceHook] = {}
+        for hooks in self.bus.broadcast(events.ServicesRegistry, None):
+            for hook in hooks:
+                self._add_service_hook(hook)
+
         self.bus.subscribe(events.MainAET, lambda _: self.get_main_aet())
+
+    def _add_service_hook(self, hook: events.ServiceHook) -> None:
+        """Registers a contributed service hook.
+
+        The hook's SOP classes are added to the AE's presentation
+        contexts; C-FIND requests arriving on them are broadcast as the
+        event class the hook declared instead of the built-in
+        :class:`~tiny_pacs.events.Find`. Hooks may only add SOP classes,
+        never replace built-in services.
+
+        :param hook: service hook contributed by a component
+        :type hook: events.ServiceHook
+        """
+        classes = [uid.UID(sop) for sop in hook.sop_classes]
+        new = [sop for sop in classes if sop not in self.supported_scp]
+        if not new:
+            self.log.warning(
+                'Service hook %r: all SOP classes are already served by '
+                'this AE, ignoring', hook.name
+            )
+            return
+        if hook.on_find is None:
+            self.log.warning(
+                'Service hook %r declares no find event, ignoring',
+                hook.name
+            )
+            return
+        for sop in new:
+            self.find_hooks[sop] = hook
+            self.log.info(
+                'Service hook %r serves SOP class %s', hook.name, sop
+            )
+
+        @sopclass.sop_classes(new)
+        def hook_find_scp(
+                asce: asceprovider.AssociationAcceptor,
+                ctx: fsm.PContextDef,
+                msg: dimsemessages.CFindRQMessage
+        ) -> None:
+            # Routing to the hook's event happens in ``on_receive_find``
+            # through the presentation context's abstract syntax
+            sopclass.qr_find_scp(asce, ctx, msg)
+
+        self.add_scp(cast(Any, hook_find_scp))
 
     def _create_server(self, port: int, bind_and_activate: bool,
                        max_pdu_length: int) -> socketserver.TCPServer:
-        if self.ssl_context is None:
-            return super()._create_server(port, bind_and_activate,
-                                          max_pdu_length)
         # ``local_ae`` is typed against ``AEBaseProto`` whose
         # ``on_receive_move`` yields plain datasets; tiny_pacs intentionally
         # yields stored-file tuples instead (see the ``on_receive_move``
         # override below).
+        handler = functools.partial(
+            _RequestHandler,
+            local_ae=self,  # type: ignore[arg-type]
+            max_pdu_length=max_pdu_length
+        )
+        if self.ssl_context is None:
+            return _ThreadingTCPServer(
+                ('', port), handler, bind_and_activate
+            )
         return _TLSThreadingTCPServer(
-            self.ssl_context, ('', port),
-            functools.partial(
-                applicationentity.RequestHandler,
-                local_ae=self,  # type: ignore[arg-type]
-                max_pdu_length=max_pdu_length
-            ),
-            bind_and_activate
+            self.ssl_context, ('', port), handler, bind_and_activate
         )
 
     def get_main_aet(self) -> str:
@@ -187,21 +267,34 @@ class AE(applicationentity.AE):
                                assoc: pdu.AAssociateRqPDU) -> None:
         """Handles incoming association requests.
 
-        Requests with an unknown called AE title are rejected; accepted
-        requests are broadcast as :class:`~tiny_pacs.events.Assoc` events.
+        Requests with an unknown called AE title are rejected and
+        broadcast as :class:`~tiny_pacs.events.AssocRejected`; for valid
+        requests the association context is opened *before* the
+        :class:`~tiny_pacs.events.Assoc` broadcast, so every listener can
+        attribute its work through :func:`tiny_pacs.assoc_context.current`.
+        A rejection raised by an ``Assoc`` listener is broadcast as
+        ``AssocRejected`` too, then re-raised so pynetdicom2 sends the
+        A-ASSOCIATE-RJ.
 
         :param asce: association acceptor
         :type asce: asceprovider.AssociationAcceptor
         :param assoc: association request parameters
         :type assoc: pdu.AAssociateRqPDU
         :raises exceptions.AssociationRejectedError: raised when the called
-                AE title is not valid for this AE
+                AE title is not valid for this AE or when an ``Assoc``
+                listener rejects the association
         """
         called_ae_title = assoc.called_ae_title.strip()
         calling_ae_title = assoc.calling_ae_title.strip()
         if called_ae_title not in self.valid_aet:
             self.log.error('Called AE Title is not valid: %s', called_ae_title)
             self.log.error('Valid AE Titles are %r', self.valid_aet)
+            self.bus.broadcast(
+                events.AssocRejected,
+                events.AssocRejectedPayload(
+                    None, f'called AE title not valid: {called_ae_title}'
+                )
+            )
             raise exceptions.AssociationRejectedError(1, 1, 7)
 
         self.log.info('Incoming association %s -> %s',
@@ -209,7 +302,44 @@ class AE(applicationentity.AE):
         if self.dump_ds:
             self.log.debug('ASSOCIATE-RQ %r', assoc)
 
-        self.bus.broadcast(events.Assoc, events.AssocPayload(asce, assoc))
+        assoc_context.open_context(asce, assoc)
+        try:
+            self.bus.broadcast(events.Assoc, events.AssocPayload(asce, assoc))
+        except exceptions.AssociationRejectedError as error:
+            reason = str(error) or 'rejected by an association listener'
+            self.bus.broadcast(
+                events.AssocRejected,
+                events.AssocRejectedPayload(assoc, reason)
+            )
+            # The association never got established: drop the context
+            # without an ``AssocReleased`` broadcast
+            assoc_context.close_current()
+            raise
+
+    def on_association_end(
+            self, asce: asceprovider.AssociationAcceptor | None = None
+    ) -> None:
+        """Handles the teardown of an incoming association.
+
+        Closes the association context of the connection thread and
+        broadcasts :class:`~tiny_pacs.events.AssocReleased` with it.
+        Called by the request handler wrapper on every association exit
+        path; associations that never opened a context (rejected before
+        establishment) are a silent no-op.
+
+        :param asce: association acceptor, unused
+        :type asce: asceprovider.AssociationAcceptor or None
+        """
+        context = assoc_context.close_current()
+        if context is None:
+            return
+        self.log.info('Association ended %s -> %s',
+                      context.calling_aet, context.called_aet)
+        try:
+            self.bus.broadcast(events.AssocReleased, context)
+        except Exception as error:
+            # Teardown must not fail because of a listener
+            self.log.exception('AssocReleased handling failed: %s', error)
 
     def on_association_response(self, response: pdu.AAssociateAcPDU) -> None:
         """Handles response to an outgoing association request."""
@@ -255,8 +385,12 @@ class AE(applicationentity.AE):
         """Handles C-STORE requests.
 
         Raw dataset bytes are wrapped in a file object; the dataset is then
-        broadcast as a :class:`~tiny_pacs.events.Store` event. The first
-        non-success handler status is returned to the peer.
+        broadcast as a :class:`~tiny_pacs.events.Store` event carrying the
+        association context. The first non-success handler status is
+        returned to the peer. The dataset is then decoded and broadcast as
+        a :class:`~tiny_pacs.events.StoreDataset` event feeding the store
+        pipeline; a decode or pipeline failure yields a C-STORE failure
+        status.
 
         :param context: presentation context
         :type context: fsm.PContextDef
@@ -264,30 +398,19 @@ class AE(applicationentity.AE):
         :type ds: BinaryIO or bytes
         :return: C-STORE status
         :rtype: statuses.Status
-        :raises exceptions.EventHandlingError: raised if event handling
-                fails
+        :raises exceptions.EventHandlingError: raised if ``Store`` event
+                handling fails
         """
         self.log.info('Received C-STORE %r', context)
         if isinstance(ds, bytes):
             # Dataset arrives as raw bytes when its SOP Class UID is not in
             # the AE ``store_in_file`` set
             ds = io.BytesIO(ds)
-        if self.dump_ds:
-            try:
-                _ds = pydicom.dcmread(ds, stop_before_pixels=True)
-
-            except Exception:
-                self.log.error(
-                    'C-STORE failed to read dataset. C-STORE operation aborted'
-                )
-                raise
-            else:
-                self.log.debug('C-STORE dataset: %r', _ds)
-            ds.seek(0)
 
         try:
             results = self.bus.broadcast(
-                events.Store, events.StorePayload(context, ds)
+                events.Store,
+                events.StorePayload(context, ds, assoc_context.current())
             )
         except Exception as error:
             msg = f'C-STORE handling failed: {error}'
@@ -297,6 +420,27 @@ class AE(applicationentity.AE):
         for status in results:
             if not status.is_success:
                 return status
+
+        try:
+            decoded = pydicom.dcmread(ds, stop_before_pixels=True)
+        except Exception:
+            self.log.error(
+                'C-STORE failed to read dataset. C-STORE operation aborted'
+            )
+            return statuses.C_STORE_CANNOT_UNDERSTAND
+        if self.dump_ds:
+            self.log.debug('C-STORE dataset: %r', decoded)
+
+        try:
+            self.bus.broadcast(
+                events.StoreDataset,
+                events.StoreDatasetPayload(
+                    decoded, str(context.supported_ts)
+                )
+            )
+        except Exception as error:
+            self.log.error('C-STORE dataset processing failed: %s', error)
+            return statuses.C_STORE_CANNOT_UNDERSTAND
         return statuses.SUCCESS
 
     def on_receive_find(
@@ -304,8 +448,11 @@ class AE(applicationentity.AE):
     ) -> Iterator[tuple[pydicom.Dataset, statuses.Status]]:
         """Handles C-FIND requests.
 
-        Broadcasts a :class:`~tiny_pacs.events.Find` event and yields the
-        results of all handlers.
+        Requests arriving on a SOP class contributed by a
+        :class:`~tiny_pacs.events.ServiceHook` are broadcast as the event
+        class the hook declared; every other request is broadcast as a
+        :class:`~tiny_pacs.events.Find` event. The results of all handlers
+        are yielded.
 
         :param context: presentation context
         :type context: fsm.PContextDef
@@ -319,10 +466,13 @@ class AE(applicationentity.AE):
         if self.dump_ds:
             self.log.debug('C-FIND dataset %r', ds)
 
+        payload = events.FindPayload(context, ds, assoc_context.current())
+        hook = self.find_hooks.get(context.sop_class)
+        event: type[trolleybus.Event[Any, Any]] = events.Find
+        if hook is not None and hook.on_find is not None:
+            event = hook.on_find
         try:
-            results = self.bus.broadcast(
-                events.Find, events.FindPayload(context, ds)
-            )
+            results: Any = self.bus.broadcast(event, payload)
         except Exception as error:
             msg = f'C-FIND handling failed {error}'
             self.log.exception(msg)
@@ -365,7 +515,9 @@ class AE(applicationentity.AE):
 
         try:
             results = self.bus.broadcast(
-                events.Move, events.MovePayload(context, ds, destination)
+                events.Move,
+                events.MovePayload(context, ds, destination,
+                                   assoc_context.current())
             )
         except Exception as error:
             msg = f'C-MOVE handling failed {error}'
@@ -397,7 +549,8 @@ class AE(applicationentity.AE):
 
         try:
             results = self.bus.broadcast(
-                events.Get, events.GetPayload(context, ds)
+                events.Get,
+                events.GetPayload(context, ds, assoc_context.current())
             )
         except Exception as error:
             msg = f'C-GET handling failed {error}'

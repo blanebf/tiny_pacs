@@ -1,10 +1,8 @@
-import io
 import uuid
 
 import pytest
 import trolleybus
-from pydicom import Dataset, uid
-from pynetdicom2 import fsm, statuses
+from pydicom import Dataset
 
 from tiny_pacs import db, events, pacs
 from tiny_pacs.pacs import models
@@ -268,10 +266,138 @@ def test_store(pacs_srv: pacs.PACS) -> None:
     assert len(results) == 1
 
 
-def test_store_unreadable_dataset(pacs_srv: pacs.PACS) -> None:
-    # A dataset that cannot be parsed must yield CANNOT_UNDERSTAND instead
-    # of crashing on an unbound local in the failure handler.
-    ctx = fsm.PContextDef(1, uid.UID('2.3.4'), uid.ImplicitVRLittleEndian)
-    payload = events.StorePayload(ctx, io.BytesIO(b'not a dicom file'))
-    status = pacs_srv.on_store(payload)
-    assert status == statuses.C_STORE_CANNOT_UNDERSTAND
+def test_store_dataset(pacs_srv: pacs.PACS) -> None:
+    done: list[Dataset] = []
+    pacs_srv.bus.subscribe(events.StoreDone, done.append)
+    payload = events.StoreDatasetPayload(ds=_store_ds(),
+                                         transfer_syntax='1.2.840.10008.1.2')
+    pacs_srv.on_store_dataset(payload)
+    assert done == [payload.ds]
+
+    request = Dataset()
+    request.PatientName = 'Store^*'
+    request.SpecificCharacterSet = 'ISO_IR 192'
+    request.QueryRetrieveLevel = 'IMAGE'
+    request.StudyInstanceUID = None
+    request.SeriesInstanceUID = None
+    request.SOPInstanceUID = None
+    request.Modality = None
+    results = list(pacs_srv.c_find(request))
+    assert len(results) == 1
+
+
+def test_store_dataset_failure(pacs_srv: pacs.PACS) -> None:
+    """A dataset that cannot be recorded broadcasts StoreFailure."""
+    failures: list[Dataset] = []
+    pacs_srv.bus.subscribe(events.StoreFailure, failures.append)
+    ds = Dataset()
+    ds.PatientID = 'no_study'
+    # No StudyInstanceUID: recording the dataset must fail
+    payload = events.StoreDatasetPayload(ds=ds,
+                                         transfer_syntax='1.2.840.10008.1.2')
+    with pytest.raises(AttributeError):
+        pacs_srv.on_store_dataset(payload)
+    assert failures == [ds]
+
+
+def _store_ds() -> Dataset:
+    ds = Dataset()
+    ds.SpecificCharacterSet = 'ISO_IR 192'
+    ds.PatientID = 'test_id'
+    ds.PatientName = 'Store^Store^Stor'
+    ds.PatientBirthDate = '19800101'
+    ds.StudyInstanceUID = '1.2.5'
+    ds.StudyDate = '20200301'
+    ds.StudyTime = '101010'
+    ds.SeriesInstanceUID = '1.2.5.6'
+    ds.Modality = 'CT'
+    ds.SOPInstanceUID = '1.2.5.6'
+    ds.SOPClassUID = '2.3.4'
+    return ds
+
+
+def test_archive_patient_query(pacs_srv: pacs.PACS) -> None:
+    items = pacs_srv.on_archive_patients(events.ArchiveFilter())
+    assert len(items) == 1
+    assert items[0].total == 1
+    assert items[0].uids == {'patient_id': 'test1'}
+    assert items[0].attributes[0x00100020] == ('LO', 'test1')
+    assert items[0].fields['patient_name'] == 'Test^Test^Test'
+
+    items = pacs_srv.on_archive_patients(
+        events.ArchiveFilter(patient_id='ghost')
+    )
+    assert items == []
+
+    items = pacs_srv.on_archive_patients(
+        events.ArchiveFilter(patient_name='Test')
+    )
+    assert len(items) == 1
+
+
+def test_archive_study_query(pacs_srv: pacs.PACS) -> None:
+    items = pacs_srv.on_archive_studies(events.ArchiveFilter())
+    assert [item.uids['study_instance_uid'] for item in items] == \
+        ['1.2.3.4', '1.2.3.5']
+    assert all(item.total == 2 for item in items)
+    assert items[0].uids['patient_id'] == 'test1'
+    assert items[0].attributes[0x00080020] == ('DA', '20200101')
+
+    items = pacs_srv.on_archive_studies(
+        events.ArchiveFilter(study_date_from='20200115')
+    )
+    assert [i.uids['study_instance_uid'] for i in items] == ['1.2.3.5']
+
+    items = pacs_srv.on_archive_studies(
+        events.ArchiveFilter(accession_number='1234')
+    )
+    assert [i.uids['study_instance_uid'] for i in items] == ['1.2.3.4']
+
+    items = pacs_srv.on_archive_studies(events.ArchiveFilter(modality='CT'))
+    assert [i.uids['study_instance_uid'] for i in items] == ['1.2.3.5']
+
+    items = pacs_srv.on_archive_studies(events.ArchiveFilter(limit=1))
+    assert len(items) == 1
+    assert items[0].total == 2
+
+    items = pacs_srv.on_archive_studies(
+        events.ArchiveFilter(limit=1, offset=1)
+    )
+    assert [i.uids['study_instance_uid'] for i in items] == ['1.2.3.5']
+
+
+def test_archive_series_query(pacs_srv: pacs.PACS) -> None:
+    items = pacs_srv.on_archive_series(events.ArchiveFilter())
+    assert len(items) == 4
+    assert all(item.total == 4 for item in items)
+    assert items[0].uids['study_instance_uid'] == '1.2.3.4'
+
+    items = pacs_srv.on_archive_series(
+        events.ArchiveFilter(study_instance_uid='1.2.3.5',
+                             series_instance_uid='1.2.3.5.6')
+    )
+    assert [i.uids['series_instance_uid'] for i in items] == ['1.2.3.5.6']
+
+    items = pacs_srv.on_archive_series(
+        events.ArchiveFilter(patient_id='test1', modality='DX')
+    )
+    assert [i.uids['series_instance_uid'] for i in items] == ['1.2.3.4.5']
+
+
+def test_archive_instance_query(pacs_srv: pacs.PACS) -> None:
+    items = pacs_srv.on_archive_instances(events.ArchiveFilter())
+    assert len(items) == 5
+    assert all(item.total == 5 for item in items)
+
+    items = pacs_srv.on_archive_instances(
+        events.ArchiveFilter(sop_instance_uid='1.2.3.4.5.6')
+    )
+    assert len(items) == 1
+    assert items[0].uids['sop_instance_uid'] == '1.2.3.4.5.6'
+    assert items[0].uids['patient_id'] == 'test1'
+    assert items[0].attributes[0x00080016] == ('UI', '2.3.4')
+
+    items = pacs_srv.on_archive_instances(
+        events.ArchiveFilter(modality='CT')
+    )
+    assert [i.uids['sop_instance_uid'] for i in items] == ['1.2.3.5.5.6']

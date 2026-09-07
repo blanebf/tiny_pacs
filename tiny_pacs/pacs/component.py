@@ -15,7 +15,14 @@ from pydicom.uid import UID
 from pynetdicom2 import statuses
 
 from .. import component, events, schema
-from . import instance_api, models, patient_api, series_api, study_api
+from . import (
+    archive_api,
+    instance_api,
+    models,
+    patient_api,
+    series_api,
+    study_api,
+)
 
 
 class QRLevelRank(enum.Enum):
@@ -68,11 +75,15 @@ class PACS(component.Component[PACSConfig]):
 
     Handles the following events:
 
-        * :class:`~tiny_pacs.events.Store`
+        * :class:`~tiny_pacs.events.StoreDataset`
         * :class:`~tiny_pacs.events.Find`
         * :class:`~tiny_pacs.events.Move`
         * :class:`~tiny_pacs.events.Get`
         * :class:`~tiny_pacs.events.Commitment`
+        * :class:`~tiny_pacs.events.ArchivePatientQuery`
+        * :class:`~tiny_pacs.events.ArchiveStudyQuery`
+        * :class:`~tiny_pacs.events.ArchiveSeriesQuery`
+        * :class:`~tiny_pacs.events.ArchiveInstanceQuery`
         * :class:`~tiny_pacs.events.Migrations`
 
     Component also handles all relevant DB interactions, except for keeping
@@ -100,11 +111,15 @@ class PACS(component.Component[PACSConfig]):
         self.series_api = series_api.SeriesAPI(bus)
         self.instance_api = instance_api.InstanceAPI(bus)
 
-        self.subscribe(events.Store, self.on_store)
+        self.subscribe(events.StoreDataset, self.on_store_dataset)
         self.subscribe(events.Find, self.on_find)
         self.subscribe(events.Move, self.on_move)
         self.subscribe(events.Get, self.on_get)
         self.subscribe(events.Commitment, self.on_commitment)
+        self.subscribe(events.ArchivePatientQuery, self.on_archive_patients)
+        self.subscribe(events.ArchiveStudyQuery, self.on_archive_studies)
+        self.subscribe(events.ArchiveSeriesQuery, self.on_archive_series)
+        self.subscribe(events.ArchiveInstanceQuery, self.on_archive_instances)
         self.subscribe(events.Migrations, self.migrations)
 
     def migrations(self, _: None = None) -> schema.ComponentMigrations:
@@ -124,31 +139,80 @@ class PACS(component.Component[PACSConfig]):
         """
         return self.send_one(events.Atomic, None)
 
-    def on_store(self, payload: events.StorePayload) -> statuses.Status:
-        """Handling of incoming storage request
+    def on_store_dataset(self, payload: events.StoreDatasetPayload) -> None:
+        """Handling of an incoming decoded dataset
 
-        :param payload: presentation context and incoming dataset
-        :type payload: events.StorePayload
-        :return: C-STORE handling status
-        :rtype: pynetdicom2.statuses.Status
+        Records the dataset attributes in the database and broadcasts
+        :class:`~tiny_pacs.events.StoreDone` on success or
+        :class:`~tiny_pacs.events.StoreFailure` on failure.
+
+        :param payload: decoded dataset, transfer syntax and origin
+        :type payload: events.StoreDatasetPayload
+        :raises Exception: re-raised after broadcasting ``StoreFailure``
+                           when the dataset could not be recorded, so the
+                           emitter can map the failure to its own error
+                           reporting (the AE answers a C-STORE failure
+                           status)
         """
-        context = payload.context
-        self.log_info('Handling store request (%r)', context)
-        try:
-            ds = pydicom.dcmread(payload.ds, stop_before_pixels=True)
-        except Exception as error:
-            self.log_exception(f'Failed to read incoming dataset: {error}')
-            return statuses.C_STORE_CANNOT_UNDERSTAND
+        ds = payload.ds
+        self.log_info('Handling store request (origin: %s)', payload.origin)
         try:
             self.c_store(ds)
         except Exception as error:
             self.log_exception(f'Failed to store dataset: {error}')
             self.broadcast(events.StoreFailure, ds)
-            return statuses.C_STORE_CANNOT_UNDERSTAND
-        else:
-            self.log_info('Dataset successfully stored (%r)', context)
-            self.broadcast(events.StoreDone, ds)
-            return statuses.SUCCESS
+            raise
+        self.log_info('Dataset successfully stored (origin: %s)',
+                      payload.origin)
+        self.broadcast(events.StoreDone, ds)
+
+    def on_archive_patients(
+            self, payload: events.ArchiveFilter
+    ) -> list[events.ArchiveItem]:
+        """Handles `ArchivePatientQuery` event
+
+        :param payload: archive query filter
+        :type payload: events.ArchiveFilter
+        :return: matching patient items
+        :rtype: list[events.ArchiveItem]
+        """
+        return archive_api.patients(payload)
+
+    def on_archive_studies(
+            self, payload: events.ArchiveFilter
+    ) -> list[events.ArchiveItem]:
+        """Handles `ArchiveStudyQuery` event
+
+        :param payload: archive query filter
+        :type payload: events.ArchiveFilter
+        :return: matching study items
+        :rtype: list[events.ArchiveItem]
+        """
+        return archive_api.studies(payload)
+
+    def on_archive_series(
+            self, payload: events.ArchiveFilter
+    ) -> list[events.ArchiveItem]:
+        """Handles `ArchiveSeriesQuery` event
+
+        :param payload: archive query filter
+        :type payload: events.ArchiveFilter
+        :return: matching series items
+        :rtype: list[events.ArchiveItem]
+        """
+        return archive_api.series(payload)
+
+    def on_archive_instances(
+            self, payload: events.ArchiveFilter
+    ) -> list[events.ArchiveItem]:
+        """Handles `ArchiveInstanceQuery` event
+
+        :param payload: archive query filter
+        :type payload: events.ArchiveFilter
+        :return: matching instance items
+        :rtype: list[events.ArchiveItem]
+        """
+        return archive_api.instances(payload)
 
     def on_find(
             self,

@@ -67,12 +67,12 @@ def test_users_add_then_authenticate_against_db(
     passwords(['secret', 'secret'])
     _run(['users', 'add', 'alice', '-c', conf])
 
-    from tiny_pacs_admin import runtime
+    from tiny_pacs import admin
+    from tiny_pacs import events as core_events
 
-    from tiny_pacs_identity import events as identity_events
     from tiny_pacs_identity.users import Users
-    with runtime.admin_context(conf, [Users.name()]) as (bus, _):
-        row = bus.send_one(identity_events.UserByName, 'alice')
+    with admin.admin_context(conf, [Users.name()]) as (bus, _):
+        row = bus.send_one(core_events.UserByName, 'alice')
     assert row is not None
     from tiny_pacs_identity import hashing
     assert hashing.verify_password('secret', row.password_hash)
@@ -149,13 +149,13 @@ def test_users_passwd(
     out = capsys.readouterr().out
     assert 'Changed password of user alice' in out
 
-    from tiny_pacs_admin import runtime
+    from tiny_pacs import admin
+    from tiny_pacs import events as core_events
 
-    from tiny_pacs_identity import events as identity_events
     from tiny_pacs_identity import hashing
     from tiny_pacs_identity.users import Users
-    with runtime.admin_context(conf, [Users.name()]) as (bus, _):
-        row = bus.send_one(identity_events.UserByName, 'alice')
+    with admin.admin_context(conf, [Users.name()]) as (bus, _):
+        row = bus.send_one(core_events.UserByName, 'alice')
     assert row is not None
     assert hashing.verify_password('newpass', row.password_hash)
     assert not hashing.verify_password('secret', row.password_hash)

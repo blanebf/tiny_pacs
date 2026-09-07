@@ -65,9 +65,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      # The extension packages pin the core (and admin, for identity) by
-      # version, so the repository packages are installed from the
-      # checkout in dependency order.
+      # The extension packages pin the core by version, so the repository
+      # packages are installed from the checkout in dependency order. The
+      # identity job also installs the admin package: its test suite
+      # exercises the interaction with the real DeviceStore component
+      # (a test-only dependency; the runtime package does not import it).
       - name: Install core and extensions
         run: pip install ${{ matrix.package.install }}
 

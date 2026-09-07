@@ -60,8 +60,8 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   configurable auto-add defaults) and the `devices`, `components` and
   `db` CLI subcommands for offline administration. See the
   "Administration: tiny-pacs-admin" tutorial page.
-- New first-party extension `tiny-pacs-identity` (0.1.0, depends on
-  `tiny-pacs-admin`): user management and association authentication.
+- New first-party extension `tiny-pacs-identity` (0.1.0): user
+  management and association authentication.
   The `Users` component keeps accounts in the database (salted scrypt
   password hashes, with a PBKDF2 fallback); the `UserIdentityAuth`
   component authenticates incoming associations via the DICOM User
@@ -90,10 +90,9 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   contract and table output for every `tiny-pacs` subcommand.
 - Convenience extras: `pip install tiny_pacs[admin]` installs
   `tiny-pacs-admin`, `pip install tiny_pacs[identity]` installs
-  `tiny-pacs-identity` (which pulls in `tiny-pacs-admin` automatically),
-  and `tiny_pacs[admin,identity]` installs both. When installing the core
-  from the repository itself, the extras resolve against the bundled
-  extension packages.
+  `tiny-pacs-identity`, and `tiny_pacs[admin,identity]` installs both.
+  When installing the core from the repository itself, the extras
+  resolve against the bundled extension packages.
 - Release automation: CI runs linting, type checks and tests per package
   (core and each extension across Python 3.10–3.14) plus an integration
   job that installs all three distributions from the repository and
@@ -101,3 +100,84 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   builds and publishes the distribution matching the release tag
   (`<distribution-name>-<version>`, or a chosen set on demand) in
   dependency order via PyPI trusted publishing.
+- Association context registry: new `tiny_pacs.assoc_context` module
+  (`AssocContext` with a stable `correlation_id`, calling/called AE
+  titles, peer address and the authenticated `username`). The AE opens
+  the context on the accepting thread *before* broadcasting
+  `events.Assoc` and closes it at association teardown;
+  `assoc_context.current()` attributes work inside every listener of
+  that association. The `Store`/`Find`/`Move`/`Get` payloads gain a
+  `session` field carrying the context (default `None`, existing
+  constructors unchanged).
+- Association lifecycle events: `events.AssocRejected` (broadcast by the
+  AE for an invalid called AE title and when an `Assoc` listener raises
+  `AssociationRejectedError` — the rejection reason travels on the
+  exception) and `events.AssocReleased` (broadcast through a new
+  request-handler teardown hook on every association exit path:
+  release, abort, timeout or error).
+- `events.AuditRecord` — the cross-extension administrative audit event
+  (category/event/device/username/status/details payload) emitted by
+  mutating components: `DeviceStore` after device add/update/remove,
+  `Users` after user add/passwd/remove/set-active and the storage
+  components after applied cleanups. With no audit component installed
+  the broadcast is a cheap no-op. Query vocabulary for a future audit
+  component and the web admin app: `events.AuditFilter` plus the
+  `AuditQuery`/`AuditCount`/`AuditStats` events.
+- Shared CRUD vocabulary moved into the core (`tiny_pacs.events`): the
+  device events `DeviceList`/`DeviceAdd`/`DeviceUpdate`/`DeviceRemove`
+  and `AutoAddIdentity` (from `tiny_pacs_admin.events`) and the user
+  events `UserByName`/`UserList`/`UserAdd`/`UserSetPassword`/
+  `UserRemove`/`UserSetActive` (from `tiny_pacs_identity.events`), plus
+  the new `events.UserVerify` (username+password — or username-only for
+  DICOM identity type 1 — to the user record or None; the handler runs
+  exactly one timing-equalized password proof and records `last_login`).
+  The extension packages re-export nothing; `tiny-pacs-identity` no
+  longer depends on `tiny-pacs-admin` and reads users exclusively
+  through events.
+- `identity.IdentityPolicy` moved from `tiny_pacs_admin.models` into the
+  core (`tiny_pacs.identity`), where the admin and identity extensions
+  and future identity-type validators import it from.
+- Storage maintenance events answered by the storage components:
+  `events.StorageStatsQuery` (`StorageStatsReport`: record totals by
+  `is_stored`, oldest/newest `added`, per-SOP-class counts, and for
+  file backends the directory, file count, total bytes and per-day
+  folder sizes), `events.StorageVerifyQuery` (`StorageVerifyReport`:
+  records with missing files, orphan files, stuck in-progress records)
+  and `events.StorageCleanupCommand` (`StorageCleanupOptions` →
+  `StorageCleanupReport`; dry run by default, `apply` for real
+  deletion, `failed_older_than_days: 0` refused, every deletion
+  containment-checked against the storage directory, orphan deletion
+  gated by a grace window plus a record re-check so an in-flight
+  C-STORE on a live server is never removed, applied cleanups
+  broadcast an `AuditRecord`). Non-file backends answer gracefully with
+  the DB-side sections only.
+- Archive query events answered by the `PACS` component:
+  `events.ArchiveFilter` plus `ArchivePatientQuery`/`ArchiveStudyQuery`/
+  `ArchiveSeriesQuery`/`ArchiveInstanceQuery` returning
+  `events.ArchiveItem` lists — identifiers, DB-level fields and a DICOM
+  view (`tag → (VR, value)`) built from the PACS model mappings, with
+  the total match count for pagination. Intended consumers: the web
+  administration app and DICOMweb QIDO-RS.
+- `events.StoreDataset`: the store pipeline now runs on decoded
+  datasets. The AE broadcasts `Store` (session-attributed, for
+  observers and future access control) and then — after decoding —
+  `StoreDataset(ds, transfer_syntax, origin)`; the `PACS` component
+  records the DB rows and broadcasts `StoreDone`/`StoreFailure`.
+  Non-DIMSE sources (e.g. DICOMweb STOW-RS) broadcast `StoreDataset`
+  directly with `origin='stow'`. `GetFilePayload` gains an optional
+  `transfer_syntax` field for sources without a real presentation
+  context; the storage components honour it.
+- Pluggable AE services: `events.ServicesRegistry`/`events.ServiceHook`
+  let extensions contribute SOP classes to the AE. The AE broadcasts
+  `ServicesRegistry` after registering its built-in SCPs, adds the
+  hooks' abstract syntaxes to its presentation contexts and routes
+  C-FIND requests on them to the event class the hook declared
+  (`on_find`) instead of the built-in `events.Find`. Hooks may only add
+  services, never replace built-ins.
+- `tiny_pacs.admin`: the headless `admin_context` helper (and its
+  `AdminError`) moved from `tiny_pacs_admin.runtime` into the core,
+  where the extension contract already promised it; the admin and
+  identity CLIs use the core helper.
+- Database inspection events: `events.SchemaVersions` and
+  `events.TableCounts`, answered by the `Database` component — the
+  admin `db info` command no longer queries core tables directly.
