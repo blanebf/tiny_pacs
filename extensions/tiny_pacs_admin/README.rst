@@ -18,7 +18,11 @@ What it provides
     devices stored in the database (``--format json|yaml`` supported);
   - ``tiny-pacs components list`` — registry contents with origin
     (built-in vs providing distribution) and enabled/disabled state;
-  - ``tiny-pacs db info`` — schema versions and table row counts.
+  - ``tiny-pacs db info`` — schema versions and table row counts;
+  - ``tiny-pacs storage stats|verify|cleanup`` — storage usage
+    statistics (``--quota`` exits 2 when exceeded), record/file
+    consistency check and safe cleanup of stuck in-progress records
+    and orphan files (dry run by default, ``--apply`` to delete).
 
 Installation
 ------------

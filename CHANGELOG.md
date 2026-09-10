@@ -57,8 +57,8 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   action keeps generating a fresh configuration.
 - New first-party extension `tiny-pacs-admin` (0.1.0): a database-backed
   device registry (`DeviceStore` component, per-device identity policy,
-  configurable auto-add defaults) and the `devices`, `components` and
-  `db` CLI subcommands for offline administration. See the
+  configurable auto-add defaults) and the `devices`, `components`, `db`
+  and `storage` CLI subcommands for offline administration. See the
   "Administration: tiny-pacs-admin" tutorial page.
 - New first-party extension `tiny-pacs-identity` (0.1.0): user
   management and association authentication.
@@ -151,6 +151,20 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   C-STORE on a live server is never removed, applied cleanups
   broadcast an `AuditRecord`). Non-file backends answer gracefully with
   the DB-side sections only.
+- `tiny-pacs-admin` gains the `storage` CLI subcommand group
+  (`stats`/`verify`/`cleanup`): thin clients of the maintenance events
+  run headless through `tiny_pacs.admin.admin_context` with the
+  `Database` and the enabled storage components only (other components
+  are never started against a possibly-live database). `stats` renders
+  table/json/yaml and exits with status 2 when `--quota GB` is
+  exceeded (monitoring-script friendly; non-positive or non-finite
+  quotas are refused); `verify` reports missing/orphan/stuck items and
+  maps `--delete-missing-records`/`--delete-orphans`/`--apply` onto
+  `StorageCleanupOptions` (dry run by default; the destructive flags
+  are refused without a file backend); `cleanup --older-than DAYS`
+  refuses `0`, warns about recent store activity before an `--apply`
+  and defaults to `--dry-run`. A configuration without any storage
+  component fails with a friendly error and a non-zero exit status.
 - Archive query events answered by the `PACS` component:
   `events.ArchiveFilter` plus `ArchivePatientQuery`/`ArchiveStudyQuery`/
   `ArchiveSeriesQuery`/`ArchiveInstanceQuery` returning
