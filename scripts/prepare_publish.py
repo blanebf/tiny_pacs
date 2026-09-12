@@ -23,6 +23,7 @@ from pathlib import Path
 EXTENSION_DIRECTORIES = {
     'tiny-pacs-admin': 'extensions/tiny_pacs_admin',
     'tiny-pacs-identity': 'extensions/tiny_pacs_identity',
+    'tiny-pacs-audit': 'extensions/tiny_pacs_audit',
 }
 
 ROOT = Path(__file__).resolve().parent.parent

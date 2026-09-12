@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "tiny_pacs"
-version = "0.3.0"
-description = "A small pure-Python PACS (Picture Archiving and Communication System)"
+name = "tiny_pacs_audit"
+version = "0.1.0"
+description = "Append-only audit trail component for tiny_pacs"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
 readme = "README.rst"
@@ -26,45 +26,35 @@ classifiers = [
     "Topic :: Software Development :: Libraries"
 ]
 
+packages = [
+    { include = "tiny_pacs_audit" }
+]
+
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-pydicom = "^3.0"
-pynetdicom2 = "^0.9.8"
-peewee = "^4.3"
-PyYAML = "^6.0"
-trolleybus = "^0.2.0"
-pydantic = "^2.13.4"
-# The optional extension distributions behind the extras below. They
-# reference the packages bundled in this repository, so the extras resolve
-# without the extensions being published yet; scripts/prepare_publish.py
-# rewrites the paths to version constraints before the core is built for
-# PyPI, which rejects dependencies on local paths.
-tiny-pacs-admin = { path = "extensions/tiny_pacs_admin", optional = true }
-tiny-pacs-identity = { path = "extensions/tiny_pacs_identity", optional = true }
-tiny-pacs-audit = { path = "extensions/tiny_pacs_audit", optional = true }
+tiny_pacs = ">=0.3,<0.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"
 ruff = "*"
 mypy = "^1.0"
 flake8 = "^7.0"
+# Test-only: the component and E2E suites exercise the interaction with
+# the real admin (device mutations) and identity (authenticated
+# associations) extensions through core events; the runtime package
+# imports neither, and dev-group dependencies are never published.
+tiny_pacs_admin = { path = "../tiny_pacs_admin" }
+tiny_pacs_identity = { path = "../tiny_pacs_identity" }
 
-[tool.poetry.group.docs.dependencies]
-sphinx = "^7.2"
-sphinx-rtd-theme = "^3.0"
+# Entry points are how the extension plugs into the core: the component is
+# advertised to the ``tiny_pacs.components`` group and the CLI subcommand to
+# the ``tiny_pacs.cli`` group (see the core extension docs).
 
-[tool.poetry.extras]
-# Convenience extras pulling the optional extension distributions in:
-# pip install tiny_pacs[admin], tiny_pacs[identity], tiny_pacs[audit] or
-# tiny_pacs[admin,identity,audit]. In the repository they resolve against
-# the bundled packages; scripts/prepare_publish.py turns that into version
-# constraints on the published distributions for PyPI builds.
-admin = ["tiny-pacs-admin"]
-identity = ["tiny-pacs-identity"]
-audit = ["tiny-pacs-audit"]
+[tool.poetry.plugins."tiny_pacs.components"]
+AuditLog = "tiny_pacs_audit.audit:AuditLog"
 
-[tool.poetry.scripts]
-tiny-pacs = "tiny_pacs.__main__:main"
+[tool.poetry.plugins."tiny_pacs.cli"]
+audit = "tiny_pacs_audit.cli:register_audit"
 
 [tool.ruff]
 target-version = "py310"

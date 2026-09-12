@@ -56,6 +56,12 @@ jobs:
               .
               extensions/tiny_pacs_admin
               extensions/tiny_pacs_identity
+          - name: tiny_pacs_audit
+            install: >-
+              .
+              extensions/tiny_pacs_admin
+              extensions/tiny_pacs_identity
+              extensions/tiny_pacs_audit
     steps:
       - uses: actions/checkout@v4
 
@@ -67,9 +73,11 @@ jobs:
 
       # The extension packages pin the core by version, so the repository
       # packages are installed from the checkout in dependency order. The
-      # identity job also installs the admin package: its test suite
-      # exercises the interaction with the real DeviceStore component
-      # (a test-only dependency; the runtime package does not import it).
+      # identity job also installs the admin package, and the audit job
+      # installs both admin and identity: their test suites exercise the
+      # interaction with the real DeviceStore/Users/UserIdentityAuth
+      # components (test-only dependencies; the runtime packages import
+      # neither).
       - name: Install core and extensions
         run: pip install ${{ matrix.package.install }}
 
@@ -106,11 +114,12 @@ jobs:
           python-version: '3.13'
           cache: pip
 
-      - name: Install core and both extensions
+      - name: Install core and the extensions
         run: >-
           pip install .
           extensions/tiny_pacs_admin
           extensions/tiny_pacs_identity
+          extensions/tiny_pacs_audit
 
       - name: Verify entry point discovery
         run: python scripts/verify_entry_points.py
@@ -121,3 +130,6 @@ jobs:
           tiny-pacs devices list --help
           tiny-pacs db info --help
           tiny-pacs users list --help
+          tiny-pacs audit query --help
+          tiny-pacs audit stats --help
+          tiny-pacs audit cleanup --help
