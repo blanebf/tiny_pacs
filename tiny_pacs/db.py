@@ -46,6 +46,10 @@ class DatabaseConfig(component.ComponentConfig):
     :ivar uri: connect via URI (SQLite only)
     :ivar mode: SQLite URI open mode (``memory``, ``rwc``, ...)
     :ivar max_conn: maximum number of pooled connections
+    :ivar wal: enable the SQLite WAL journal mode (ignored by PostgreSQL)
+    :ivar busy_timeout: SQLite ``busy_timeout`` in milliseconds; how long
+                        a blocked write waits for the lock instead of
+                        failing with ``database is locked``
     :ivar host: PostgreSQL host
     :ivar port: PostgreSQL port
     :ivar user: PostgreSQL user
@@ -57,6 +61,8 @@ class DatabaseConfig(component.ComponentConfig):
     uri: bool = True
     mode: str = 'memory'
     max_conn: int = 20
+    wal: bool = True
+    busy_timeout: int = 10000
     host: str = 'localhost'
     port: int = 5432
     user: str = 'postgres'
@@ -240,11 +246,18 @@ class Database(component.Component[DatabaseConfig]):
         db_name = config.db_name or 'pacs.db'
         if config.uri:
             db_name = f'file:{db_name}?mode={config.mode}&cache=shared'
-        self.log_info('Initialized SQLite database %s', db_name)
+        pragmas: dict[str, Any] = {'busy_timeout': config.busy_timeout}
+        if config.wal:
+            pragmas['journal_mode'] = 'wal'
+        self.log_info(
+            'Initialized SQLite database %s (wal=%s, busy_timeout=%dms)',
+            db_name, config.wal, config.busy_timeout
+        )
         return cast(
             peewee.SqliteDatabase,
             pool.PooledSqliteDatabase(
-                db_name, uri=config.uri, max_connections=config.max_conn
+                db_name, uri=config.uri, max_connections=config.max_conn,
+                pragmas=pragmas
             )
         )
 
