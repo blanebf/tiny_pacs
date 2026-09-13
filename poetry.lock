@@ -37,6 +37,17 @@ files = [
 dev = ["backports.zoneinfo", "freezegun (>=1.0,<2.0)", "jinja2 (>=3.0)", "pytest (>=6.0)", "pytest-cov", "pytz", "setuptools", "tzdata"]
 
 [[package]]
+name = "bottle"
+version = "0.13.4"
+description = "Fast and simple WSGI-framework for small web-applications."
+optional = true
+python-versions = "*"
+files = [
+    {file = "bottle-0.13.4-py2.py3-none-any.whl", hash = "sha256:045684fbd2764eac9cdeb824861d1551d113e8b683d8d26e296898d3dd99a12e"},
+    {file = "bottle-0.13.4.tar.gz", hash = "sha256:787e78327e12b227938de02248333d788cfe45987edca735f8f88e03472c3f47"},
+]
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -1299,6 +1310,24 @@ type = "directory"
 url = "extensions/tiny_pacs_admin"
 
 [[package]]
+name = "tiny-pacs-admin-web"
+version = "0.1.0"
+description = "Browser-based administration console for tiny_pacs"
+optional = true
+python-versions = ">=3.10,<4.0"
+files = []
+develop = false
+
+[package.dependencies]
+bottle = "^0.13"
+tiny_pacs = ">=0.3,<0.4"
+waitress = "^3.0"
+
+[package.source]
+type = "directory"
+url = "extensions/tiny_pacs_admin_web"
+
+[[package]]
 name = "tiny-pacs-audit"
 version = "0.1.0"
 description = "Append-only audit trail component for tiny_pacs"
@@ -1439,12 +1468,28 @@ h2 = ["h2 (>=4,<5)"]
 socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["backports-zstd (>=1.0.0)"]
 
+[[package]]
+name = "waitress"
+version = "3.0.2"
+description = "Waitress WSGI server"
+optional = true
+python-versions = ">=3.9.0"
+files = [
+    {file = "waitress-3.0.2-py3-none-any.whl", hash = "sha256:c56d67fd6e87c2ee598b76abdd4e96cfad1f24cacdea5078d382b1f9d7b5ed2e"},
+    {file = "waitress-3.0.2.tar.gz", hash = "sha256:682aaaf2af0c44ada4abfb70ded36393f0e307f4ab9456a215ce0020baefc31f"},
+]
+
+[package.extras]
+docs = ["Sphinx (>=1.8.1)", "docutils", "pylons-sphinx-themes (>=1.0.9)"]
+testing = ["coverage (>=7.6.0)", "pytest", "pytest-cov"]
+
 [extras]
 admin = ["tiny-pacs-admin"]
 audit = ["tiny-pacs-audit"]
 identity = ["tiny-pacs-identity"]
+web-admin = ["tiny-pacs-admin-web"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<4.0"
-content-hash = "e01058ae88876aa624103f5d98ba962f6ac07f3bed747ce5bebc91524c8d271d"
+content-hash = "dbd00f0eee8023f6a6c0ac582d1dbd8e0a9d6bd9ba859ace482cb5d272a8cde6"

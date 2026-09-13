@@ -24,6 +24,7 @@ EXTENSION_DIRECTORIES = {
     'tiny-pacs-admin': 'extensions/tiny_pacs_admin',
     'tiny-pacs-identity': 'extensions/tiny_pacs_identity',
     'tiny-pacs-audit': 'extensions/tiny_pacs_audit',
+    'tiny-pacs-admin-web': 'extensions/tiny_pacs_admin_web',
 }
 
 ROOT = Path(__file__).resolve().parent.parent

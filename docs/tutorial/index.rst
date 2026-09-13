@@ -16,4 +16,5 @@ self-contained.
    extensions-admin
    extensions-identity
    extensions-audit
+   extensions-admin-web
    migrations

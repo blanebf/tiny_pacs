@@ -1,8 +1,9 @@
 name: Publish to PyPI
 
 # Builds and publishes the distributions of this repository: tiny_pacs
-# (core), tiny_pacs_admin, tiny_pacs_identity and tiny_pacs_audit — one
-# job per distribution, parameterized by package path.
+# (core), tiny_pacs_admin, tiny_pacs_identity, tiny_pacs_audit and
+# tiny_pacs_admin_web — one job per distribution, parameterized by
+# package path.
 #
 # Publishing uses trusted publishing (PyPI OpenID Connect): each PyPI
 # project must be configured to trust this workflow; no API tokens are
@@ -16,8 +17,8 @@ name: Publish to PyPI
 # re-running a partially failed workflow is safe.
 #
 # Publishing happens in dependency order (core, then admin, then identity,
-# then audit), so every uploaded distribution's requirements already exist
-# on PyPI.
+# then audit, then admin-web), so every uploaded distribution's
+# requirements already exist on PyPI.
 #
 # The core's extras point at the bundled extension packages through local
 # paths; scripts/prepare_publish.py rewrites them to version constraints
@@ -39,6 +40,7 @@ on:
           - tiny_pacs_admin
           - tiny_pacs_identity
           - tiny_pacs_audit
+          - tiny_pacs_admin_web
 
 permissions:
   contents: read
@@ -50,7 +52,9 @@ env:
     {"name": "tiny_pacs_identity",
     "path": "extensions/tiny_pacs_identity"},
     {"name": "tiny_pacs_audit",
-    "path": "extensions/tiny_pacs_audit"}]
+    "path": "extensions/tiny_pacs_audit"},
+    {"name": "tiny_pacs_admin_web",
+    "path": "extensions/tiny_pacs_admin_web"}]
 
 jobs:
   select:
@@ -62,6 +66,7 @@ jobs:
       admin: ${{ steps.select.outputs.admin }}
       identity: ${{ steps.select.outputs.identity }}
       audit: ${{ steps.select.outputs.audit }}
+      admin_web: ${{ steps.select.outputs.admin_web }}
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +104,7 @@ jobs:
           fi
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
           for name in tiny_pacs tiny_pacs_admin tiny_pacs_identity \
-                      tiny_pacs_audit; do
+                      tiny_pacs_audit tiny_pacs_admin_web; do
             selected=false
             if echo "$packages" | jq -e \
                 --arg name "$name" 'any(.[]; .name == $name)' \
@@ -111,6 +116,7 @@ jobs:
               tiny_pacs_admin) key=admin ;;
               tiny_pacs_identity) key=identity ;;
               tiny_pacs_audit) key=audit ;;
+              tiny_pacs_admin_web) key=admin_web ;;
             esac
             echo "$key=$selected" >> "$GITHUB_OUTPUT"
           done
@@ -153,11 +159,12 @@ jobs:
           if-no-files-found: error
 
   # Ordered by dependency so every uploaded distribution's requirements
-  # already exist on PyPI: core, then admin, then identity, then audit.
-  # The gate is on the steps, not the jobs: GitHub Actions skips every job
-  # that needs a skipped job, so an unselected distribution must run its
-  # job as a successful no-op or the whole chain after it would be
-  # skipped. A failed job still blocks its dependents.
+  # already exist on PyPI: core, then admin, then identity, then audit,
+  # then admin-web. The gate is on the steps, not the jobs: GitHub
+  # Actions skips every job that needs a skipped job, so an unselected
+  # distribution must run its job as a successful no-op or the whole
+  # chain after it would be skipped. A failed job still blocks its
+  # dependents.
   publish-core:
     name: Publish tiny_pacs
     needs: [select, build]
@@ -234,6 +241,26 @@ jobs:
 
       - name: Publish to PyPI
         if: needs.select.outputs.audit == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  publish-admin-web:
+    name: Publish tiny_pacs_admin_web
+    needs: [select, build, publish-audit]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        if: needs.select.outputs.admin_web == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-tiny_pacs_admin_web
+          path: dist/
+
+      - name: Publish to PyPI
+        if: needs.select.outputs.admin_web == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
