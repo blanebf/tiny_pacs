@@ -3,7 +3,7 @@
   <h3>Server</h3>
   <table class="kv">
     <tr><th>Main AE title</th><td>{{ main_aet }}</td></tr>
-    <tr><th>Console bind address</th><td>{{ console_host }}</td></tr>
+    <tr><th>HTTP mounts</th><td>{{ http_mounts }}</td></tr>
   </table>
 </section>
 <section class="card">

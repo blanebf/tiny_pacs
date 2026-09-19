@@ -33,8 +33,8 @@ def pacs_port(_pacs: server.Server) -> int:
     return int(_pacs.ae.server.server_address[1])
 
 
-@pytest.fixture
-def pacs_client(pacs: server.Server) -> client.DICOMClient:
+def _client_for(_pacs: server.Server) -> client.DICOMClient:
+    """Builds a DICOM client connected to a running server."""
     def main_aet(_: None) -> str:
         return 'TEST_CLIENT'
     bus = trolleybus.EventBus()
@@ -44,12 +44,17 @@ def pacs_client(pacs: server.Server) -> client.DICOMClient:
             'TINY_PACS': {
                 'aet': 'TINY_PACS',
                 'address': '127.0.0.1',
-                'port': pacs_port(pacs)
+                'port': pacs_port(_pacs)
             }
         }
     })
     _client = client.Client(bus, {})
     return _client.get('TINY_PACS')
+
+
+@pytest.fixture
+def pacs_client(pacs: server.Server) -> client.DICOMClient:
+    return _client_for(pacs)
 
 
 @pytest.fixture
@@ -95,6 +100,50 @@ def test_storage(pacs: server.Server, pacs_client: client.DICOMClient,
                  test_ds: pydicom.Dataset) -> None:
     pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
                       uid.ImplicitVRLittleEndian)
+
+
+@pytest.fixture
+def small_pool_pacs() -> Iterator[server.Server]:
+    """Server whose pool has just one slot beyond the main thread's.
+
+    The startup migrations leave the main thread holding one pooled
+    connection, so with ``max_conn: 2`` only a single association thread
+    fits at a time: associations succeed only while every per-association
+    thread returns its connection to the pool when it is done.
+    """
+    conf = config.Config()
+    conf.update_config({
+        'ae': {'port': 0},
+        'components': {
+            'Database': {
+                'on': True,
+                'db_name': str(uuid.uuid4()),
+                'max_conn': 2
+            }
+        }
+    })
+    _pacs = server.Server(conf)
+    _pacs.start()
+    yield _pacs
+    _pacs.exit()
+
+
+def test_store_releases_pool_connections(
+        small_pool_pacs: server.Server,
+        test_ds: pydicom.Dataset) -> None:
+    """Stores over more associations than the pool has slots must work.
+
+    Every C-STORE runs on fresh threads (the connection thread and the
+    per-association DUL thread) that both check out pooled connections.
+    Leaked connections used to abort the store with
+    ``playhouse.pool.MaxConnectionsExceeded`` once the pool filled up.
+    """
+    pacs_client = _client_for(small_pool_pacs)
+    for _ in range(4):
+        ds = test_ds.copy()
+        ds.SOPInstanceUID = uid.generate_uid()
+        pacs_client.store(ds, uids.BASIC_TEXT_SR_STORAGE,
+                          uid.ImplicitVRLittleEndian)
 
 
 class CStoreAE(applicationentity.AE):

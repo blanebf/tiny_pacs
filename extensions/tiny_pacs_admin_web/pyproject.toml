@@ -37,15 +37,19 @@ include = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-tiny_pacs = ">=0.3,<0.4"
+tiny_pacs = ">=0.4,<0.5"
 bottle = "^0.13"
-waitress = "^3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"
 ruff = "*"
 mypy = "^1.0"
 flake8 = "^7.0"
+# Test-only: the component/E2E suites mount the console on the core
+# shared HttpServer, whose waitress dependency is lazy and ships as the
+# core extra tiny_pacs[http]; dev-group dependencies are never
+# published, and the runtime package does not import waitress.
+waitress = "^3.0"
 # Test-only: the E2E suites exercise the console against real user
 # registries and device stores (UserVerify, device/user CRUD listeners)
 # provided by the admin and identity extensions through core events; the

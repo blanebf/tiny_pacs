@@ -1,8 +1,9 @@
 """The administration console WSGI application.
 
 A bottle application assembled from blueprinted sub-apps — one per
-console section (root/login/dashboard, devices, users, JSON API) — served
-by waitress. Templates ship as package data and are loaded through
+console section (root/login/dashboard, devices, users, archive browser,
+JSON API) — contributed to the core shared ``HttpServer`` as a plain
+WSGI callable. Templates ship as package data and are loaded through
 :mod:`importlib.resources`; styles are one hand-written CSS file and the
 little JavaScript needed (device echo, delete confirmations) is vanilla
 and bundled. No CDNs, no build step.
@@ -29,6 +30,7 @@ over the event bus (:func:`AppState.bus`), feature availability comes
 from ``bus.has_listeners`` and missing listeners degrade pages to
 "not available" instead of raising.
 """
+import datetime
 import functools
 import json
 import logging
@@ -39,7 +41,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from importlib import resources
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import bottle  # type: ignore[import-untyped]
 import trolleybus
@@ -98,6 +100,7 @@ FEATURE_EVENTS: dict[str, type[trolleybus.Event[Any, Any]]] = {
     'echo': events.GetClient,
     'storage': events.StorageStatsQuery,
     'db': events.TableCounts,
+    'archive': events.ArchivePatientQuery,
 }
 
 #: Generic message for every refused login, whatever the reason (wrong
@@ -167,7 +170,6 @@ class AppState:
 
     :ivar bus: the live event bus every administration action travels on
     :ivar logger: component logger used for request logging and warnings
-    :ivar host: configured bind address (displayed on the dashboard)
     :ivar secure_cookie: adds the ``Secure`` flag to the session cookie
     :ivar session_ttl: session idle timeout in seconds (also the cookie
                        ``Max-Age``)
@@ -182,7 +184,6 @@ class AppState:
 
     bus: trolleybus.EventBus
     logger: logging.Logger
-    host: str = '127.0.0.1'
     secure_cookie: bool = False
     session_ttl: int = 3600
     max_sessions: int = 100
@@ -236,7 +237,7 @@ def _load_templates() -> dict[str, Any]:
     names = (
         '_base', 'login', 'dashboard', 'error', 'not_available',
         'devices_list', 'device_form', 'device_detail',
-        'users_list', 'user_add', 'user_password'
+        'users_list', 'user_add', 'user_password', 'archive_list'
     )
     loaded: dict[str, Any] = {}
     for name in names:
@@ -350,7 +351,7 @@ def build_app(state: AppState) -> Any:
 
     :param state: shared application state
     :type state: AppState
-    :return: WSGI callable to hand to waitress
+    :return: WSGI callable contributed to the core shared HTTP server
     """
     bottle.DEBUG = False
     root = bottle.Bottle()
@@ -361,6 +362,7 @@ def build_app(state: AppState) -> Any:
     for prefix, register in (
         ('/devices', _register_devices),
         ('/users', _register_users),
+        ('/archive', _register_archive),
         ('/api', _register_api)
     ):
         section = bottle.Bottle()
@@ -404,7 +406,6 @@ def _render(state: AppState, session: Session | None,
         'is_admin': session is not None and session.role == ROLE_ADMIN,
         'features': state.features(),
         'show_users_to_viewer': state.expose_users_to_viewer,
-        'console_host': state.host,
         # URLs of records whose identifiers come from the database (AE
         # titles, usernames) are built through this helper only
         'quote': _url_quote,
@@ -736,6 +737,9 @@ def _dashboard_page(state: AppState) -> str:
     schema_versions = _bus_call(state, events.SchemaVersions, None) or {}
     table_counts = _bus_call(state, events.TableCounts, None) or {}
     main_aet = _bus_call(state, events.MainAET, None)
+    mounts = _bus_call(state, events.HttpMountsQuery, None) or []
+    http_mounts = ', '.join(f'{name} on {prefix}'
+                            for name, prefix in mounts) or '-'
     stats = _bus_call(state, events.StorageStatsQuery, None)
     storage: dict[str, Any] | None = None
     if stats is not None:
@@ -755,6 +759,7 @@ def _dashboard_page(state: AppState) -> str:
         schema_versions=sorted(schema_versions.items()),
         table_counts=sorted(table_counts.items()),
         main_aet=main_aet or '-',
+        http_mounts=http_mounts,
         storage=storage
     )
 
@@ -1061,6 +1066,361 @@ def _register_users(state: AppState, app: Any) -> None:
 
 
 # -----------------------------------------------------------------------
+# Archive browser section
+# -----------------------------------------------------------------------
+
+#: Fixed table page size of the archive browser (no config knob in v0.1)
+ARCHIVE_PAGE_SIZE = 50
+
+#: Defensive cap on the pager offset: nobody clicks through thousands of
+#: pages, but an unbounded offset would reach the SQL OFFSET clause and
+#: force full row-skip scans
+ARCHIVE_MAX_OFFSET = 10_000
+
+#: Search form fields, mapped 1:1 onto ``events.ArchiveFilter``
+ARCHIVE_FORM_FIELDS = (
+    'patient_id', 'patient_name', 'patient_birth_date', 'accession_number',
+    'study_date_from', 'study_date_to', 'modality',
+    'study_instance_uid', 'series_instance_uid', 'sop_instance_uid'
+)
+
+#: Human-readable labels of the search form fields
+ARCHIVE_FIELD_LABELS: dict[str, str] = {
+    'patient_id': 'Patient ID',
+    'patient_name': 'Patient name',
+    'patient_birth_date': 'Birth date',
+    'accession_number': 'Accession number',
+    'study_date_from': 'Study date from',
+    'study_date_to': 'Study date to',
+    'modality': 'Modality',
+    'study_instance_uid': 'Study Instance UID',
+    'series_instance_uid': 'Series Instance UID',
+    'sop_instance_uid': 'SOP Instance UID',
+}
+
+#: Search fields carrying DICOM dates (DA); validated and normalized
+ARCHIVE_DATE_FIELDS = ('patient_birth_date', 'study_date_from',
+                       'study_date_to')
+
+#: Per-level metadata of the archive browser.
+#:
+#: ``event`` is the archive query event of the level; ``segment`` its URL
+#: path segment (None for the root level); ``columns`` are the rendered
+#: ``(label, ArchiveItem.fields key)`` pairs; ``link_uid`` /
+#: ``link_level`` / ``link_label`` describe the drill-down link built
+#: from ``ArchiveItem.uids`` and routed through :func:`_archive_target`
+#: (all None/empty on the deepest level); ``pinned`` is the form field
+#: whose value comes from (and is locked to) the URL path segment on the
+#: drill-down levels.
+ARCHIVE_LEVELS: dict[str, dict[str, Any]] = {
+    'patient': {
+        'event': events.ArchivePatientQuery,
+        'title': 'Archive — patients',
+        'segment': None,
+        'columns': (('Patient ID', 'patient_id'),
+                    ('Patient name', 'patient_name'),
+                    ('Birth date', 'patient_birth_date'),
+                    ('Sex', 'patient_sex')),
+        'link_uid': 'patient_id',
+        'link_level': 'study',
+        'link_label': 'Studies',
+        'pinned': None,
+    },
+    'study': {
+        'event': events.ArchiveStudyQuery,
+        'title': 'Archive — studies',
+        'segment': 'studies',
+        'columns': (('Patient ID', 'patient_id'),
+                    ('Study date', 'study_date'),
+                    ('Accession', 'accession_number'),
+                    ('Description', 'study_description'),
+                    ('Study Instance UID', 'study_instance_uid')),
+        'link_uid': 'study_instance_uid',
+        'link_level': 'series',
+        'link_label': 'Series',
+        'pinned': 'patient_id',
+    },
+    'series': {
+        'event': events.ArchiveSeriesQuery,
+        'title': 'Archive — series',
+        'segment': 'series',
+        'columns': (('Patient ID', 'patient_id'),
+                    ('Modality', 'modality'),
+                    ('Series number', 'series_number'),
+                    ('Series Instance UID', 'series_instance_uid')),
+        'link_uid': 'series_instance_uid',
+        'link_level': 'instance',
+        'link_label': 'Instances',
+        'pinned': 'study_instance_uid',
+    },
+    'instance': {
+        'event': events.ArchiveInstanceQuery,
+        'title': 'Archive — instances',
+        'segment': 'instances',
+        'columns': (('Patient ID', 'patient_id'),
+                    ('Instance number', 'instance_number'),
+                    ('SOP Class UID', 'sop_class_uid'),
+                    ('SOP Instance UID', 'sop_instance_uid'),
+                    ('Transfer syntax', 'transfer_syntax_uid')),
+        'link_uid': None,
+        'link_level': None,
+        'link_label': '',
+        'pinned': 'series_instance_uid',
+    },
+}
+
+
+def _archive_target(segment: str | None, path_uid: str | None) -> str:
+    """Builds the URL path of one archive browser level."""
+    if segment is None or not path_uid:
+        return '/archive/'
+    return f'/archive/{segment}/{_url_quote(path_uid)}'
+
+
+def _archive_raw_values(params: Mapping[str, Any]) -> dict[str, str]:
+    """Reads the search form fields of a request."""
+    return {name: str(params.get(name) or '').strip()
+            for name in ARCHIVE_FORM_FIELDS}
+
+
+def _archive_offset(raw: Any) -> int:
+    """Parses a pagination offset, falling back to the first page.
+
+    The value is capped at :data:`ARCHIVE_MAX_OFFSET` so an absurd
+    query-string offset cannot force the database into huge row-skip
+    scans.
+    """
+    try:
+        offset = int(str(raw if raw is not None else '').strip() or 0)
+    except ValueError:
+        return 0
+    if offset <= 0:
+        return 0
+    return min(offset, ARCHIVE_MAX_OFFSET)
+
+
+def _normalize_da(value: str, label: str) -> str:
+    """Validates and normalizes one DICOM date (DA) form value.
+
+    Accepts ``YYYY-MM-DD`` (what the date inputs submit) and
+    ``YYYYMMDD`` (what drill-down links carry); everything else — and
+    every non-calendar date — is refused.
+
+    :param value: submitted form value
+    :type value: str
+    :param label: field label used in the error message
+    :type label: str
+    :return: the normalized ``YYYYMMDD`` form
+    :rtype: str
+    :raises ValueError: raised when the value is not a calendar date
+    """
+    digits = value.strip().replace('-', '')
+    valid = len(digits) == 8 and digits.isdigit()
+    if valid:
+        try:
+            datetime.datetime.strptime(digits, '%Y%m%d')
+        except ValueError:
+            valid = False
+    if not valid:
+        raise ValueError(
+            f'Invalid {label} {value.strip()!r}: use a calendar date as '
+            f'YYYY-MM-DD or YYYYMMDD'
+        )
+    return digits
+
+
+def _archive_normalize(raw: Mapping[str, str]) -> dict[str, str]:
+    """Normalizes and validates every search form value.
+
+    :param raw: submitted form values (already stripped)
+    :type raw: Mapping[str, str]
+    :return: values in canonical (DICOM date) form
+    :rtype: dict[str, str]
+    :raises ValueError: raised for an invalid date field
+    """
+    values = dict(raw)
+    for name in ARCHIVE_DATE_FIELDS:
+        if values.get(name):
+            values[name] = _normalize_da(
+                values[name], ARCHIVE_FIELD_LABELS[name]
+            )
+    return values
+
+
+def _archive_filter(values: Mapping[str, str],
+                    offset: int) -> events.ArchiveFilter:
+    """Translates normalized search values into an archive filter.
+
+    Empty fields stay None (universal matching); the page size is fixed
+    (:data:`ARCHIVE_PAGE_SIZE`) in v0.1.
+
+    :param values: normalized form values
+    :type values: Mapping[str, str]
+    :param offset: pagination offset
+    :type offset: int
+    :return: the filter to broadcast
+    :rtype: events.ArchiveFilter
+    """
+    kwargs = {name: values[name] for name in ARCHIVE_FORM_FIELDS
+              if values.get(name)}
+    return events.ArchiveFilter(limit=ARCHIVE_PAGE_SIZE, offset=offset,
+                                **kwargs)
+
+
+def _archive_pagination(total: int, offset: int) -> dict[str, Any]:
+    """Computes the pagination display values against ``total``.
+
+    :param total: total match count reported by ``ArchiveItem.total``
+    :type total: int
+    :param offset: current offset
+    :type offset: int
+    :return: display values (page/pages, has_prev/has_next, offsets)
+    :rtype: dict
+    """
+    pages = max(1, -(-total // ARCHIVE_PAGE_SIZE))
+    return {
+        'total': total,
+        'offset': offset,
+        'page': min(offset // ARCHIVE_PAGE_SIZE + 1, pages),
+        'pages': pages,
+        'has_prev': offset > 0,
+        'has_next': offset + ARCHIVE_PAGE_SIZE < total,
+        'prev_offset': max(0, offset - ARCHIVE_PAGE_SIZE),
+        'next_offset': offset + ARCHIVE_PAGE_SIZE,
+    }
+
+
+def _archive_query_string(values: Mapping[str, str]) -> str:
+    """Encodes the search context carried by drill-down/pagination links."""
+    return urlencode({name: values[name] for name in ARCHIVE_FORM_FIELDS
+                      if values.get(name)})
+
+
+def _archive_form_fields(values: Mapping[str, str],
+                         spec: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Builds the search form field descriptors for the template.
+
+    Dates are converted back to the ``YYYY-MM-DD`` form the ``date``
+    inputs expect; the field pinned by the URL path renders read-only.
+    """
+    fields = []
+    for name in ARCHIVE_FORM_FIELDS:
+        value = values.get(name) or ''
+        field_type = 'text'
+        if name in ARCHIVE_DATE_FIELDS:
+            field_type = 'date'
+            if len(value) == 8 and value.isdigit():
+                value = f'{value[:4]}-{value[4:6]}-{value[6:]}'
+        fields.append({
+            'name': name,
+            'label': ARCHIVE_FIELD_LABELS[name],
+            'type': field_type,
+            'value': value,
+            'readonly': name == spec['pinned'],
+        })
+    return fields
+
+
+def _archive_row(spec: Mapping[str, Any], item: events.ArchiveItem,
+                 qs_suffix: str) -> dict[str, Any]:
+    """Converts one archive item into display cells plus a drill-down
+    link carrying the current search context."""
+    cells = []
+    for _label, name in spec['columns']:
+        value = item.fields.get(name)
+        cells.append('-' if value in (None, '') else str(value))
+    link = ''
+    if spec['link_uid'] is not None and spec['link_level'] is not None:
+        uid = item.uids.get(spec['link_uid'])
+        if uid:
+            next_segment = ARCHIVE_LEVELS[spec['link_level']]['segment']
+            link = f'{_archive_target(next_segment, uid)}{qs_suffix}'
+    return {'cells': cells, 'link': link}
+
+
+def _register_archive(state: AppState, app: Any) -> None:
+    """Registers the archive browser routes (read-only)."""
+
+    @app.get('/')
+    def archive_patients() -> str:
+        return _archive_page(state, 'patient', None)
+
+    # The studies level pins a Patient ID, and DICOM Person/LO values
+    # legally contain '/': WSGI percent-decodes the path before routing,
+    # so the identifier is matched with the ``path`` filter. UIDs (the
+    # other levels) cannot contain slashes and keep the strict wildcard.
+    @app.get('/studies/<path_uid:path>')
+    def archive_studies(path_uid: str) -> str:
+        if not path_uid:
+            bottle.abort(404)
+        return _archive_page(state, 'study', path_uid)
+
+    @app.get('/series/<path_uid>')
+    def archive_series(path_uid: str) -> str:
+        return _archive_page(state, 'series', path_uid)
+
+    @app.get('/instances/<path_uid>')
+    def archive_instances(path_uid: str) -> str:
+        return _archive_page(state, 'instance', path_uid)
+
+
+def _archive_page(state: AppState, level: str,
+                  path_uid: str | None) -> str:
+    """Renders one archive browser level page.
+
+    The search form maps 1:1 onto :class:`~tiny_pacs.events.ArchiveFilter`
+    (query parameters of a GET request); on the drill-down levels the URL
+    path segment pins the corresponding UID field. Pagination runs
+    through ``limit``/``offset`` against ``ArchiveItem.total``.
+    """
+    session = _guard_page(state)
+    if not state.has_feature('archive'):
+        return _not_available(state, session, 'archive')
+    spec = ARCHIVE_LEVELS[level]
+    raw = _archive_raw_values(bottle.request.params)
+    if spec['pinned'] is not None and path_uid:
+        # The drill-down context comes from the URL path, never from
+        # (manipulable) form values
+        raw[spec['pinned']] = path_uid
+    offset = _archive_offset(bottle.request.params.get('offset'))
+    error: str | None = None
+    try:
+        values = _archive_normalize(raw)
+    except ValueError as exc:
+        error = str(exc)
+        values = raw
+    total = 0
+    rows: list[dict[str, Any]] = []
+    if error is None:
+        items = _bus_call(state, spec['event'],
+                          _archive_filter(values, offset))
+        if items is None:
+            # The archive backend is installed but currently failing:
+            # degrade like a missing listener instead of pretending the
+            # archive is empty
+            return _not_available(state, session, 'archive')
+        total = items[0].total if items else 0
+        qs = _archive_query_string(values)
+        qs_suffix = f'?{qs}' if qs else ''
+        rows = [_archive_row(spec, item, qs_suffix) for item in items]
+    return _render(
+        state, session, 'archive_list', title=spec['title'],
+        level_title=spec['title'],
+        level=level,
+        columns=[label for label, _name in spec['columns']],
+        link_label=spec['link_label'],
+        rows=rows,
+        total=total,
+        searched=error is None,
+        page=_archive_pagination(total, offset),
+        form_fields=_archive_form_fields(values, spec),
+        form_target=_archive_target(spec['segment'], path_uid),
+        qs=_archive_query_string(values),
+        error=error
+    )
+
+
+# -----------------------------------------------------------------------
 # JSON API section
 # -----------------------------------------------------------------------
 
@@ -1077,8 +1437,9 @@ def _run_echo(state: AppState, aet: str) -> Any:
     """Runs a device C-ECHO in a worker thread with a bounded timeout.
 
     The DICOM association runs off the request thread pool so a hanging
-    device can never exhaust waitress workers; the request returns the
-    outcome (or a timeout) after at most :data:`ECHO_TIMEOUT_SECONDS`.
+    device can never exhaust the shared HTTP server's workers; the
+    request returns the outcome (or a timeout) after at most
+    :data:`ECHO_TIMEOUT_SECONDS`.
     At most :data:`MAX_CONCURRENT_ECHOES` echoes run at the same time —
     an echo abandoned after its timeout keeps its slot until its thread
     really finishes, so hung threads cannot accumulate without bound;

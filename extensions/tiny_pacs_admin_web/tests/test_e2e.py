@@ -1,9 +1,10 @@
 """End-to-end console tests against live tiny_pacs servers.
 
-Starts real servers (AE + event bus + waitress) with the ``AdminWeb``
-component and — where relevant — the real ``DeviceStore``/``Users``
-extension components providing the listeners (imported by the test
-process only), then drives the console over HTTP with ``urllib``.
+Starts real servers (AE + event bus + the core shared ``HttpServer``)
+with the ``AdminWeb`` component and — where relevant — the real
+``DeviceStore``/``Users`` extension components providing the listeners
+(imported by the test process only), then drives the console over HTTP
+with ``urllib``.
 """
 import logging
 import uuid
@@ -22,8 +23,10 @@ from tiny_pacs import client as core_client
 from tiny_pacs import config as core_config
 from tiny_pacs import devices as core_devices
 from tiny_pacs import events as core_events
+from tiny_pacs import http as core_http
 from tiny_pacs import server as core_server
 
+from tiny_pacs_admin_web import web as web_module
 from tiny_pacs_admin_web.component import AdminWeb
 from tiny_pacs_admin_web.models import WebGrantModel, _utcnow
 
@@ -40,11 +43,14 @@ def web_server(tmp_path: Path) -> Iterator[Callable[..., SimpleNamespace]]:
       ``Users`` components;
     * ``components``: full replacement of the components section;
     * ``console``: ``AdminWeb`` config overrides;
+    * ``http_config``: ``HttpServer`` config overrides (default:
+      ephemeral port);
     * ``users`` / ``grants``: seeded PACS users and console grants.
 
     :yield: factory returning a namespace with ``srv``, ``web`` (the
-            ``AdminWeb`` instance), ``console`` (an :class:`HttpClient`)
-            and ``ae_port``
+            ``AdminWeb`` instance), ``http`` (the ``HttpServer``
+            instance), ``console`` (an :class:`HttpClient`) and
+            ``ae_port``
     """
     servers: list[core_server.Server] = []
 
@@ -52,6 +58,7 @@ def web_server(tmp_path: Path) -> Iterator[Callable[..., SimpleNamespace]]:
             extensions: bool = True,
             components: dict[str, Any] | None = None,
             console: dict[str, Any] | None = None,
+            http_config: dict[str, Any] | None = None,
             users: Sequence[tuple[str, str]] = (),
             grants: Sequence[tuple[str, str]] = ()
     ) -> SimpleNamespace:
@@ -65,7 +72,9 @@ def web_server(tmp_path: Path) -> Iterator[Callable[..., SimpleNamespace]]:
                 'PACS': {'on': True},
                 'InMemoryStorage': {'on': True},
                 'Devices': {'on': True, 'auto_add': False},
-                'AdminWeb': {'on': True, 'port': 0, **(console or {})}
+                'HttpServer': {'on': True, 'port': 0,
+                               **(http_config or {})},
+                'AdminWeb': {'on': True, **(console or {})}
             }
             if extensions:
                 components['DeviceStore'] = {'on': True}
@@ -79,6 +88,10 @@ def web_server(tmp_path: Path) -> Iterator[Callable[..., SimpleNamespace]]:
             component for component in srv.components
             if isinstance(component, AdminWeb)
         )
+        http_server = next(
+            (component for component in srv.components
+             if isinstance(component, core_http.HttpServer)), None
+        )
         for username, password in users:
             srv.bus.send_one(core_events.UserAdd, {
                 'username': username, 'password': password
@@ -87,11 +100,12 @@ def web_server(tmp_path: Path) -> Iterator[Callable[..., SimpleNamespace]]:
             WebGrantModel.create(username=username, role=role,
                                  created=_utcnow())
         assert srv.ae is not None
+        web_port = http_server.web_port if http_server is not None else None
         return SimpleNamespace(
             srv=srv,
             web=web,
-            console=(HttpClient(web.web_port)
-                     if web.web_port is not None else None),
+            http=http_server,
+            console=(HttpClient(web_port) if web_port is not None else None),
             ae_port=int(srv.ae.server.server_address[1])
         )
 
@@ -120,8 +134,9 @@ def _admin_env(start: Callable[..., Any]) -> SimpleNamespace:
 
 
 @contextmanager
-def component_log() -> Iterator[list[logging.LogRecord]]:
-    """Captures records of the ``AdminWeb`` logger around a server start.
+def component_log(name: str = 'AdminWeb'
+                  ) -> Iterator[list[logging.LogRecord]]:
+    """Captures records of one component logger around a server start.
 
     ``Server`` applies ``dictConfig`` at construction, which replaces the
     root handlers (including pytest's caplog handler); attaching directly
@@ -133,7 +148,7 @@ def component_log() -> Iterator[list[logging.LogRecord]]:
         def emit(self, record: logging.LogRecord) -> None:
             records.append(record)
 
-    logger = logging.getLogger('AdminWeb')
+    logger = logging.getLogger(name)
     handler = _Capture(level=logging.DEBUG)
     logger.setLevel(logging.DEBUG)
     logger.addHandler(handler)
@@ -301,7 +316,8 @@ def test_devices_page_degrades_without_registry(
             'PACS': {'on': True},
             'InMemoryStorage': {'on': True},
             'Users': {'on': True},
-            'AdminWeb': {'on': True, 'port': 0}
+            'HttpServer': {'on': True, 'port': 0},
+            'AdminWeb': {'on': True}
         },
         users=[('alice', 'secret')],
         grants=[('alice', 'admin')]
@@ -319,7 +335,11 @@ def test_console_disabled_without_user_registry_ae_keeps_serving(
         web_server: Callable[..., Any]) -> None:
     with component_log() as records:
         env = web_server(extensions=False)
-    assert env.web.web_port is None
+    # The console contributes no app ("disabled" = "not mounted"): the
+    # shared HTTP server has zero hooks and stays dormant
+    assert env.srv.bus.send_one(core_events.HttpMountsQuery, None) == []
+    assert env.http is not None
+    assert env.http.web_port is None
     assert env.console is None
     assert any(record.levelno >= logging.WARNING
                and 'UserVerify' in record.getMessage()
@@ -334,14 +354,17 @@ def test_console_disabled_without_user_registry_ae_keeps_serving(
 def test_port_conflict_console_disabled_ae_keeps_serving(
         web_server: Callable[..., Any]) -> None:
     first = _admin_env(web_server)
-    taken_port = first.web.web_port
+    assert first.http is not None
+    taken_port = first.http.web_port
     assert taken_port is not None
-    with component_log() as records:
+    with component_log('HttpServer') as records:
         second = web_server(
-            extensions=True, console={'port': taken_port},
+            extensions=True, http_config={'port': taken_port},
             users=[('alice', 'secret')], grants=[('alice', 'admin')]
         )
-    assert second.web.web_port is None
+    assert second.http is not None
+    assert second.http.web_port is None
+    assert second.console is None
     assert any(record.levelno >= logging.CRITICAL
                and 'Cannot bind' in record.getMessage()
                for record in records)
@@ -351,6 +374,7 @@ def test_port_conflict_console_disabled_ae_keeps_serving(
     )
     core_client.DICOMClient('MODALITY', device).echo()
     # The first console is still serving
+    assert first.console is not None
     assert first.console.get('/login').status == 200
 
 
@@ -360,7 +384,8 @@ def test_role_enforcement_end_to_end(web_server: Callable[..., Any]
         users=[('alice', 'secret'), ('bob', 'wonder')],
         grants=[('alice', 'admin'), ('bob', 'viewer')]
     )
-    viewer = HttpClient(env.web.web_port)
+    assert env.http is not None and env.http.web_port is not None
+    viewer = HttpClient(env.http.web_port)
     response = viewer.post('/login',
                            {'username': 'bob', 'password': 'wonder'})
     assert response.status == 200
@@ -377,3 +402,86 @@ def test_role_enforcement_end_to_end(web_server: Callable[..., Any]
     )
     assert mutation.status == 403
     assert env.srv.bus.send_one(core_events.DeviceList, None) == []
+
+
+# -----------------------------------------------------------------------
+# Archive browser through the shared HTTP server
+# -----------------------------------------------------------------------
+
+def _store_via_dicom(env: SimpleNamespace, patient_id: str,
+                     name: str = 'Test^Patient',
+                     study_date: str = '20200115') -> pydicom.Dataset:
+    """Stores one dataset through a real C-STORE association."""
+    ds = pydicom.Dataset()
+    ds.PatientName = name
+    ds.PatientID = patient_id
+    ds.PatientBirthDate = '19800101'
+    ds.PatientSex = 'M'
+    ds.SpecificCharacterSet = 'ISO_IR 192'
+    ds.StudyDate = study_date
+    ds.AccessionNumber = f'ACC-{patient_id}'
+    ds.StudyDescription = 'Chest CT'
+    ds.Modality = 'CT'
+    ds.SeriesNumber = '1'
+    ds.InstanceNumber = '1'
+    ds.StudyInstanceUID = uid.generate_uid()
+    ds.SeriesInstanceUID = uid.generate_uid()
+    ds.SOPInstanceUID = uid.generate_uid()
+    ds.SOPClassUID = uids.BASIC_TEXT_SR_STORAGE
+    device = core_devices.DeviceConfig(
+        aet=MAIN_AET, address='127.0.0.1', port=env.ae_port
+    )
+    core_client.DICOMClient('MODALITY', device).store(
+        ds, uids.BASIC_TEXT_SR_STORAGE, uid.ImplicitVRLittleEndian
+    )
+    return ds
+
+
+def test_archive_through_shared_server(web_server: Callable[..., Any],
+                                       monkeypatch: pytest.MonkeyPatch
+                                       ) -> None:
+    env = _admin_env(web_server)
+    client = _login(env)
+    first = _store_via_dicom(env, 'P1')
+    _store_via_dicom(env, 'P2', name='Smith^Ann', study_date='20210601')
+
+    # The patients table shows both with drill-down links
+    page = client.get('/archive/')
+    assert page.status == 200
+    assert 'P1' in page.text and 'P2' in page.text
+    assert '/archive/studies/P1' in page.text
+    assert '2 match(es)' in page.text
+
+    # Substring search on the patient name
+    page = client.get('/archive/?patient_name=Smi')
+    assert 'P2' in page.text
+    assert '/archive/studies/P1' not in page.text
+
+    # Study date range search (the form submits YYYY-MM-DD dates)
+    page = client.get('/archive/?study_date_from=2021-01-01')
+    assert 'P2' in page.text
+    assert '/archive/studies/P1' not in page.text
+
+    # Drill-down: studies -> series -> instances with pre-filled UIDs
+    studies = client.get('/archive/studies/P1')
+    assert studies.status == 200
+    assert first.StudyInstanceUID in studies.text
+    assert f'/archive/series/{first.StudyInstanceUID}' in studies.text
+    series = client.get(f'/archive/series/{first.StudyInstanceUID}')
+    assert series.status == 200
+    assert first.SeriesInstanceUID in series.text
+    assert f'/archive/instances/{first.SeriesInstanceUID}' in series.text
+    assert 'value="' + first.StudyInstanceUID + '"' in series.text, \
+        'the pinned UID filter is pre-filled'
+    instances = client.get(f'/archive/instances/{first.SeriesInstanceUID}')
+    assert instances.status == 200
+    assert first.SOPInstanceUID in instances.text
+
+    # Pagination against ArchiveItem.total with a fixed page size
+    monkeypatch.setattr(web_module, 'ARCHIVE_PAGE_SIZE', 1)
+    page = client.get('/archive/')
+    assert 'P1' in page.text and 'P2' not in page.text
+    assert '2 match(es) — page 1 of 2' in page.text
+    page = client.get('/archive/?offset=1')
+    assert 'P2' in page.text
+    assert 'page 2 of 2' in page.text

@@ -115,6 +115,7 @@ class Database(component.Component[DatabaseConfig]):
         self.subscribe(events.StringAgg, self.string_agg_func)
         self.subscribe(events.SchemaVersions, self.schema_versions)
         self.subscribe(events.TableCounts, self.table_counts)
+        self.subscribe(events.CloseConnection, self.close_connection)
         self.db: peewee.Database | None = None
 
     @classmethod
@@ -240,6 +241,20 @@ class Database(component.Component[DatabaseConfig]):
             counts[table] = int(row[0]) if row is not None else 0
         return counts
 
+    def close_connection(self, _: None = None) -> None:
+        """Handles `CloseConnection` event.
+
+        Closes the database connection of the calling thread; peewee tracks
+        connections per thread, so this runs in the thread that performed
+        the queries. With the pooled drivers (see :class:`DatabaseConfig`)
+        the connection is returned to the pool instead of being destroyed:
+        worker threads (association threads, HTTP handlers) must send this
+        event when their unit of work ends, because the pool only reclaims
+        connections on close and thread exits alone leak them permanently.
+        """
+        if self.db is not None and not self.db.is_closed():
+            self.db.close()
+
     def _init_sqlite(self) -> peewee.SqliteDatabase:
         """Initializes SQLite database."""
         config = self.config
@@ -253,11 +268,18 @@ class Database(component.Component[DatabaseConfig]):
             'Initialized SQLite database %s (wal=%s, busy_timeout=%dms)',
             db_name, config.wal, config.busy_timeout
         )
+        # ``check_same_thread=False`` is required for the pool: every
+        # thread (association, HTTP worker) checks connections out and
+        # back in, so a returned connection is legitimately reused by
+        # another thread and sqlite3's same-thread guard would reject
+        # it. The pool hands a connection to at most one thread at a
+        # time and the sqlite3 module is serialized, so the reuse is
+        # safe.
         return cast(
             peewee.SqliteDatabase,
             pool.PooledSqliteDatabase(
                 db_name, uri=config.uri, max_connections=config.max_conn,
-                pragmas=pragmas
+                pragmas=pragmas, check_same_thread=False
             )
         )
 

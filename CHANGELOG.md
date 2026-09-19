@@ -4,16 +4,22 @@ All notable changes to `tiny_pacs` are documented here. The project
 follows semantic versioning.
 
 **Compatibility promise (extension API):** within a minor series (e.g.
-`0.3.x`) the stable extension surface never breaks: the entry-point group
+`0.4.x`) the stable extension surface never breaks: the entry-point group
 names and value formats (`tiny_pacs.components`, `tiny_pacs.cli`),
 `component.Component` / `ComponentConfig` / `config.register_component`,
 everything in `tiny_pacs.events`, `tiny_pacs.schema` and the documented API
 reference, and the CLI helpers `add_common_arguments` / `admin_context`.
 Breaking changes land in a new minor series and are announced here together
 with a migration note. Extensions pin the series they target, e.g.
-`tiny_pacs >=0.3,<0.4`.
+`tiny_pacs >=0.4,<0.5`.
 
-## 0.3.0
+## 0.4.0
+
+*Version note: the `0.3.0` string was consumed on PyPI on 2026-09-01 by an
+early snapshot that predates most of the entries below (its metadata ships
+only the `admin`/`identity` extras and it has no `tiny_pacs.admin`,
+archive-query events or HTTP server). Nothing from this section ever
+reached PyPI as 0.3.0; all of it ships as 0.4.0.*
 
 New plugin APIs: extensions are optional distributions discovered through
 Python entry points; see the "Writing a third-party extension" tutorial page.
@@ -188,6 +194,49 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   C-FIND requests on them to the event class the hook declared
   (`on_find`) instead of the built-in `events.Find`. Hooks may only add
   services, never replace built-ins.
+- Shared HTTP server: the new built-in `HttpServer` component
+  (`tiny_pacs.http`) hosts every HTTP front-end of the process with one
+  waitress server. It broadcasts the new
+  `events.HttpAppsRegistry` after the bus has started, collects the
+  contributed `events.HttpAppHook` applications and serves them through
+  a dependency-free stdlib WSGI prefix dispatcher (longest-prefix match
+  on path segments, `SCRIPT_NAME`/`PATH_INFO` rewrite, `/` as the
+  catch-all; duplicate prefixes mount the first and log a WARNING). The
+  new `events.HttpMountsQuery` introspection event reports the mounted
+  `(name, prefix)` pairs (used for cross-front-end links). All
+  bind-level policy lives in the component: loopback default with
+  `allow_remote` validation at config load, a loud WARNING for allowed
+  remote binds, port-conflict degradation (CRITICAL log, server
+  disabled, DICOM AE keeps running), the `TINY_PACS_HEADLESS` guard,
+  ephemeral `port: 0` binds and dormant behaviour when nothing is
+  contributed. waitress is imported lazily and ships as the core extra
+  `tiny_pacs[http]` (implied by `tiny_pacs[web-admin]`); without it the
+  component warns and stays disabled. The dispatcher logs
+  WARNING/CRITICAL only (unmatched paths are logged through `%r`, so
+  percent-decoded control characters cannot forge log lines) —
+  providers keep their own request logs. Hardening: the
+  `TINY_PACS_HEADLESS` guard counts mere presence (fail-closed for the
+  empty values orchestration tools produce), a loopback-accepted *name*
+  is re-checked against its resolved addresses before binding (a
+  `localhost` resolving non-loopback is refused with a CRITICAL line)
+  and malformed provider answers (non-list, unusable prefix, missing
+  app) are logged and skipped instead of breaking startup.
+- Archive query filter semantics are uniform across the levels: filters
+  naming a level below the queried one now restrict the upper levels
+  too (e.g. a study date range, an accession number or a series/instance
+  UID narrows a PATIENT-level query through the studies the patients
+  own, exactly like the modality filter always did). Previously such
+  filters were silently ignored on the levels above theirs.
+- `admin_context` sets (and restores) the `TINY_PACS_HEADLESS` guard
+  around the whole headless administration session, so even an unscoped
+  CLI run that instantiates every enabled component (e.g. `tiny-pacs
+  db info` against a config with `HttpServer: on`) never binds an HTTP
+  port. Previously each CLI had to set the guard itself.
+- Versioning: the core series is bumped to `0.4.0` (see the version
+  note above) and the bundled extensions pin `tiny_pacs >=0.4,<0.5`.
+  The already-published `tiny-pacs-admin`/`tiny-pacs-identity` `0.1.0`
+  distributions pin `<0.4`, so they are re-released as `0.1.1` with the
+  widened pin in the dependency-ordered release run.
 - `tiny_pacs.admin`: the headless `admin_context` helper (and its
   `AdminError`) moved from `tiny_pacs_admin.runtime` into the core,
   where the extension contract already promised it; the admin and
@@ -195,3 +244,21 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
 - Database inspection events: `events.SchemaVersions` and
   `events.TableCounts`, answered by the `Database` component — the
   admin `db info` command no longer queries core tables directly.
+- Fix: pooled DB connections no longer leak from worker threads
+  (`playhouse.pool.MaxConnectionsExceeded` after a handful of incoming
+  associations and web requests). peewee tracks connections per thread
+  and the pool reclaims them only on an explicit close in that thread,
+  but every DICOM association runs on fresh threads (the connection
+  thread and pynetdicom2's DUL provider thread) and the waitress
+  workers keep theirs for their lifetime — nothing ever released them,
+  so the pool (default `max_conn: 20`) filled up permanently. The new
+  `events.CloseConnection`, answered by the `Database` component,
+  closes the calling thread's connection (a pooled one returns to the
+  pool for reuse) and is sent at every worker boundary: association
+  teardown on the connection thread, after the per-store `GetFile`
+  call on the DUL thread and after each served HTTP request (a small
+  WSGI wrapper around the dispatcher, releasing even on failed or
+  aborted responses). Pooled SQLite connections are now opened with
+  `check_same_thread=False` so a released connection can be reused by
+  the next thread: the pool hands a connection to exactly one thread
+  at a time, which makes the cross-thread reuse safe.

@@ -28,7 +28,7 @@ series they were built and tested against:
 .. code-block:: toml
 
     [tool.poetry.dependencies]
-    tiny_pacs = ">=0.3,<0.4"
+    tiny_pacs = ">=0.4,<0.5"
 
 Entry point groups
 ------------------
@@ -177,7 +177,7 @@ running deployment is a no-op until the operator opts in.
 Checklist for extension authors
 -------------------------------
 
-- Depend on ``tiny_pacs >=0.3,<0.4`` — the minor series built and tested
+- Depend on ``tiny_pacs >=0.4,<0.5`` — the minor series built and tested
   against.
 - Declare entry points in the groups you implement (table key per your
   metadata style — ``[tool.poetry.plugins."group"]`` for legacy Poetry

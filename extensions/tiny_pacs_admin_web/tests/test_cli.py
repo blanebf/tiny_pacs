@@ -16,8 +16,8 @@ from conftest import sqlite_config
 from tiny_pacs import __main__ as cli
 from tiny_pacs import db as core_db
 from tiny_pacs.admin import AdminError
+from tiny_pacs.http import HEADLESS_ENV
 
-from tiny_pacs_admin_web.component import HEADLESS_ENV
 from tiny_pacs_admin_web.models import WebGrantModel
 
 

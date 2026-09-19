@@ -121,12 +121,13 @@ A complete example
       Devices:
         on: true
         auto_add: true            # register calling AE titles automatically
-        default_port: 11113       # port used for auto-added devices
+        default_port: 11114       # port used for auto-added devices
         devices:
           WORKSTATION:
             aet: WORKSTATION
             address: 192.168.1.10
-            port: 11113
+            port: 11114           # not 11113: keep clear of the shared
+                                  # HTTP server default port
             # Optional DICOM user identity for outgoing connections to this
             # device (used for C-MOVE sub-operations and Storage Commitment):
             # username: dicom_user

@@ -176,7 +176,8 @@ def test_prepare_publish_rewrites_real_pyproject(tmp_path: Path) -> None:
     assert 'admin = ["tiny-pacs-admin"]' in text
     assert 'identity = ["tiny-pacs-identity"]' in text
     assert 'audit = ["tiny-pacs-audit"]' in text
-    assert 'web-admin = ["tiny-pacs-admin-web"]' in text
+    assert 'web-admin = ["tiny-pacs-admin-web", "waitress"]' in text
+    assert 'http = ["waitress"]' in text
 
 
 def test_verify_entry_points_script() -> None:

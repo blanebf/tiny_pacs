@@ -328,12 +328,13 @@ Example
       Devices:
         on: true
         auto_add: true            # register calling AE titles automatically
-        default_port: 11113       # port used for auto-added devices
+        default_port: 11114       # port used for auto-added devices
         devices:
           WORKSTATION:
             aet: WORKSTATION
             address: 192.168.1.10
-            port: 11113
+            port: 11114           # not 11113: keep clear of the shared
+                                  # HTTP server default port
             # Optional DICOM user identity for outgoing connections to this
             # device (used for C-MOVE sub-operations and Storage Commitment):
             # username: dicom_user
@@ -379,6 +380,12 @@ Component registry
 |                     | C-FIND, C-MOVE, C-GET and Storage Commitment requests on  |
 |                     | top of the ``Patient``/``Study``/``Series``/``Instance``  |
 |                     | database models.                                          |
++---------------------+-----------------------------------------------------------+
+| ``HttpServer``      | The single HTTP server of the process (waitress, from     |
+|                     | the ``tiny_pacs[http]`` extra): dispatches requests to    |
+|                     | the WSGI applications contributed by HTTP front-ends      |
+|                     | (admin console, DICOMweb, ...) by longest URL prefix.     |
+|                     | Binds nothing while no application is contributed.        |
 +---------------------+-----------------------------------------------------------+
 | ``FileStorage``     | Stores incoming datasets on disk: one file per SOP        |
 |                     | Instance in daily (``YYYYMMDD``) sub-folders of           |

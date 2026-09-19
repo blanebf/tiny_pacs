@@ -100,7 +100,11 @@ class _RequestHandler(applicationentity.RequestHandler):
     on the connection thread; wrapping it here gives the AE a teardown
     hook for every exit path (release, abort, timeout or error), which
     closes the association context and broadcasts
-    :class:`~tiny_pacs.events.AssocReleased`.
+    :class:`~tiny_pacs.events.AssocReleased`. Afterwards the handler
+    broadcasts :class:`~tiny_pacs.events.CloseConnection` so the thread
+    returns its pooled database connection: peewee tracks connections
+    per thread and this thread dies with the association, so without the
+    explicit close every association leaks one pooled connection.
     """
 
     def handle(self) -> None:
@@ -108,9 +112,14 @@ class _RequestHandler(applicationentity.RequestHandler):
             super().handle()
         finally:
             local_ae = getattr(self.asce, 'ae', None)
-            on_end = getattr(local_ae, 'on_association_end', None)
-            if callable(on_end):
-                on_end(self.asce)
+            try:
+                on_end = getattr(local_ae, 'on_association_end', None)
+                if callable(on_end):
+                    on_end(self.asce)
+            finally:
+                bus = getattr(local_ae, 'bus', None)
+                if bus is not None:
+                    bus.broadcast_nothrow(events.CloseConnection, None)
 
 
 class AE(applicationentity.AE):
@@ -252,6 +261,12 @@ class AE(applicationentity.AE):
                  command_set: pydicom.Dataset) -> tuple[BinaryIO, int]:
         """Requests a file object to store the incoming dataset.
 
+        Runs on the per-association DUL provider thread (the FSM decodes
+        the incoming dataset there), so the thread-local database
+        connection the storage handlers check out is released right after:
+        the DUL thread dies with the association and never runs another
+        teardown hook, and an unclosed pooled connection would leak.
+
         :param context: presentation context
         :type context: fsm.PContextDef
         :param command_set: command dataset of the received message
@@ -259,9 +274,12 @@ class AE(applicationentity.AE):
         :return: file object and the dataset stream start position
         :rtype: tuple
         """
-        return self.bus.send_one(
-            events.GetFile, events.GetFilePayload(context, command_set)
-        )
+        try:
+            return self.bus.send_one(
+                events.GetFile, events.GetFilePayload(context, command_set)
+            )
+        finally:
+            self.bus.broadcast_nothrow(events.CloseConnection, None)
 
     def on_association_request(self, asce: asceprovider.AssociationAcceptor,
                                assoc: pdu.AAssociateRqPDU) -> None:

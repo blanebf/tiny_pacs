@@ -64,7 +64,7 @@ jobs:
               extensions/tiny_pacs_audit
           - name: tiny_pacs_admin_web
             install: >-
-              .
+              ".[http]"
               extensions/tiny_pacs_admin
               extensions/tiny_pacs_identity
               extensions/tiny_pacs_admin_web

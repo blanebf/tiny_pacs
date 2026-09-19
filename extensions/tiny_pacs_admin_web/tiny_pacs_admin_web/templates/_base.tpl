@@ -18,6 +18,9 @@
     % if features['devices']:
     <a href="/devices/">Devices</a>
     % end
+    % if features['archive']:
+    <a href="/archive/">Archive</a>
+    % end
     % if features['users'] and (is_admin or show_users_to_viewer):
     <a href="/users/">Users</a>
     % end

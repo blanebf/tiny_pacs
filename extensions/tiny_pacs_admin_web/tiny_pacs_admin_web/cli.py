@@ -7,9 +7,9 @@ which role — and work offline against the configured database through the
 core :func:`tiny_pacs.admin.admin_context` helper with the ``Database``
 and ``AdminWeb`` components: the grant table is created, bound and its
 schema version recorded through the regular ``Migrations`` mechanism,
-exactly like during a server start. ``AdminWeb`` never binds its HTTP
-port in a headless run because the ``TINY_PACS_HEADLESS`` environment
-guard is set for the duration of every command.
+exactly like during a server start. ``AdminWeb`` never contributes its
+console app in a headless run because the ``TINY_PACS_HEADLESS``
+environment guard is set for the duration of every command.
 
 Granting works independently of the user registry: a grant only takes
 effect for a username that also passes ``UserVerify`` at login (e.g. a
@@ -33,8 +33,9 @@ from tiny_pacs.__main__ import (
 )
 from tiny_pacs.admin import AdminError, admin_context
 from tiny_pacs.db import Database
+from tiny_pacs.http import HEADLESS_ENV
 
-from .component import HEADLESS_ENV, AdminWeb
+from .component import AdminWeb
 from .models import ROLE_VIEWER, ROLES, WebGrantModel, _utcnow
 
 
@@ -60,7 +61,8 @@ def _grant_context(config: list[str]
     ``create_table`` that would leave a database the later server start
     detects as pre-existing tables without a recorded schema version.
     The ``TINY_PACS_HEADLESS`` guard is set for the duration of the
-    command, so the ``AdminWeb`` component never binds its HTTP port.
+    command, so the ``AdminWeb`` component never contributes its console
+    app during the headless run.
     """
     previous = os.environ.get(HEADLESS_ENV)
     os.environ[HEADLESS_ENV] = '1'

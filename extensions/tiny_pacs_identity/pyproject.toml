@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tiny_pacs_identity"
-version = "0.1.0"
+version = "0.1.1"
 description = "User management and DICOM user identity authentication for tiny_pacs"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
@@ -32,7 +32,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-tiny_pacs = ">=0.3,<0.4"
+tiny_pacs = ">=0.4,<0.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"

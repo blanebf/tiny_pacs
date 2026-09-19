@@ -3,17 +3,19 @@ Web administration: ``tiny-pacs-admin-web``
 
 ``tiny-pacs-admin-web`` serves a small browser-based administration
 console from inside the running server process: a dashboard, device
-management (including a C-ECHO test) and user management — without shell
-access or YAML editing. It is the GUI counterpart of the ``devices`` and
-``users`` CLI subcommands, and every action it performs travels over the
-event bus as a core event, so the console works with *whichever*
-extension provides the listeners and mutations are audited exactly like
-CLI-driven ones.
+management (including a C-ECHO test), user management and a read-only
+archive browser — without shell access or YAML editing. It is the GUI
+counterpart of the ``devices`` and ``users`` CLI subcommands, and every
+action it performs travels over the event bus as a core event, so the
+console works with *whichever* extension provides the listeners and
+mutations are audited exactly like CLI-driven ones.
 
 The extension contributes:
 
-* ``AdminWeb`` — the component binding an HTTP port (bottle application
-  served by waitress in a daemon thread) and owning the single
+* ``AdminWeb`` — the component providing the console as a plain WSGI
+  application (bottle) to the **core shared ``HttpServer`` component**
+  through :class:`~tiny_pacs.events.HttpAppsRegistry`, mounted on the
+  root prefix ``/``. It runs no server of its own and owns the single
   ``WebGrant`` table of console grants;
 * the ``web-admin`` CLI subcommand (``grant``/``revoke``/``list``)
   managing that table offline.
@@ -22,11 +24,26 @@ It imports the core only: login verifies credentials through
 :class:`~tiny_pacs.events.UserVerify` (served, for example, by the
 ``Users`` component of ``tiny-pacs-identity``), device and user pages
 consume the core CRUD events (served, for example, by ``DeviceStore``
-from ``tiny-pacs-admin``), and the dashboard reads
-:class:`~tiny_pacs.events.SchemaVersions`,
-:class:`~tiny_pacs.events.TableCounts` and
+from ``tiny-pacs-admin``), the archive browser consumes the core archive
+query events (answered by the built-in ``PACS`` component), and the
+dashboard reads :class:`~tiny_pacs.events.SchemaVersions`,
+:class:`~tiny_pacs.events.TableCounts`,
+:class:`~tiny_pacs.events.HttpMountsQuery` and
 :class:`~tiny_pacs.events.StorageStatsQuery`. A feature whose listeners
 are missing degrades to a "not available" page — never to a stack trace.
+
+One HTTP server for everything
+------------------------------
+
+The process runs a **single** HTTP server: the core ``HttpServer``
+component binds one port, runs one waitress worker pool and dispatches
+requests to every contributed WSGI application by longest URL prefix
+(the console is the root application on ``/``; other front-ends such as
+the planned DICOMweb mount on their own prefixes). All bind-level policy
+lives there: the loopback default, the ``allow_remote`` validation, the
+loud WARNING for remote binds, port-conflict degradation and the
+``TINY_PACS_HEADLESS`` guard. The dashboard's *HTTP mounts* row (and
+:class:`~tiny_pacs.events.HttpMountsQuery`) show what is mounted.
 
 Installation
 ------------
@@ -35,10 +52,12 @@ Installation
 
     pip install tiny-pacs-admin-web
 
-Dependencies are the core plus ``bottle`` and ``waitress`` (both small,
-pure-Python, no build step, no CDNs — the UI's CSS and JavaScript ship
-inside the package). Installing the extension never changes server
-behaviour: the component stays disabled until enabled in the
+Dependencies are the core plus ``bottle`` (single-module pure-Python, no
+build step, no CDNs — the UI's CSS and JavaScript ship inside the
+package). The WSGI server itself (waitress) belongs to the core HTTP
+extra: ``pip install tiny_pacs[web-admin]`` pulls the extension *and*
+``tiny_pacs[http]`` in one go. Installing the extension never changes
+server behaviour: the component stays disabled until enabled in the
 configuration.
 
 Bootstrap: users and grants
@@ -60,10 +79,11 @@ The console needs two things per operator:
 The commands run offline through the headless admin runtime against the
 configured database, so SQLite deployments need a file-based database
 (``db_name`` plus ``mode: rwc``), like every other admin command. They
-instantiate the ``Database`` component only — the console never binds
-its HTTP port during CLI runs (the ``TINY_PACS_HEADLESS`` environment
-guard additionally suppresses binding for any headless run that does
-construct the component).
+instantiate the ``Database`` component only — no HTTP port is ever bound
+during CLI runs (the ``TINY_PACS_HEADLESS`` environment guard
+additionally suppresses serving for any headless run that does construct
+the components: ``HttpServer`` binds nothing and ``AdminWeb`` registers
+no app while it is set).
 
 Two roles exist:
 
@@ -85,6 +105,9 @@ session on its next click.
 Configuration
 -------------
 
+The HTTP transport is configured once on the core ``HttpServer``;
+``AdminWeb`` keeps only application-level settings:
+
 .. code-block:: yaml
 
     components:
@@ -96,31 +119,39 @@ Configuration
         on: true                # answers UserVerify (tiny-pacs-identity)
       DeviceStore:
         on: true                # answers the device CRUD events
-      AdminWeb:
+      HttpServer:               # core: shared by every HTTP front-end
         on: true
         host: 127.0.0.1         # loopback behind a TLS proxy (default)
         port: 11113
         allow_remote: false     # refuses non-loopback binds unless true
+        threads: 16             # the single waitress worker pool
+      AdminWeb:
+        on: true
         secure_cookie: false    # true behind the TLS-terminating proxy
         session_ttl: 3600       # idle timeout of a session, seconds
         max_sessions: 100       # LRU eviction beyond this
         max_login_failures: 5   # before the exponential backoff starts
         expose_users_to_viewer: false
-        threads: 8              # waitress worker threads
 
 Behaviour worth knowing:
 
-* ``host`` must be a loopback address (``127.0.0.1``, ``::1``,
+* ``HttpServer.host`` must be a loopback address (``127.0.0.1``, ``::1``,
   ``localhost``) unless ``allow_remote: true`` — the refusal happens at
   configuration validation. With ``allow_remote`` the startup logs a
   loud WARNING: waitress has **no TLS support**, so a non-loopback bind
   without a proxy in front exposes login passwords in clear text.
-* ``port: 0`` binds an ephemeral port; the actually bound port appears
-  in the startup log (useful for tests).
+* ``HttpServer.port: 0`` binds an ephemeral port; the actually bound
+  port appears in the startup log (useful for tests). Without
+  ``waitress`` installed the server logs a WARNING and stays disabled —
+  install ``tiny_pacs[http]``.
+* An ``HttpServer`` with **zero** contributed applications binds nothing
+  and stays dormant, so enabling it is harmless on installs without any
+  web front-end.
 * No component answering ``UserVerify`` → login would be impossible, so
-  the console warns and stays disabled; the DICOM AE is never affected.
-  The same holds for an HTTP port that cannot be bound (logged at
-  CRITICAL): the AE keeps running.
+  the console warns and registers no app on the shared server; the
+  shared server (and every other mount) and the DICOM AE are never
+  affected. The same holds for an HTTP port that cannot be bound
+  (logged as CRITICAL by ``HttpServer``): the AE keeps running.
 * ``expose_users_to_viewer: false`` (the default) hides the users page
   from viewers entirely — usernames can be sensitive in hospital
   settings.
@@ -156,8 +187,8 @@ Sessions and security primitives
   ``Referrer-Policy: no-referrer``, ``X-Frame-Options: DENY`` and
   ``Cache-Control: no-store``. Error pages are generic; bottle's debug
   mode is forced off.
-* Request logging records method, path, status and duration only —
-  never query strings or form bodies.
+* Request logging records method, path, status and duration only — never
+  query strings or form bodies.
 
 The pages
 ---------
@@ -171,7 +202,7 @@ The pages
      - session handling (logout is a CSRF-protected form)
    * - ``/``
      - dashboard: component registry with origins, schema versions, DB
-       row counts, storage headlines, feature availability
+       row counts, storage headlines, HTTP mounts, feature availability
    * - ``/devices``
      - device list (identity policy, masked outgoing password)
    * - ``/devices/add``, ``/devices/{aet}/edit``
@@ -184,6 +215,37 @@ The pages
    * - ``/users``
      - user list with console roles; add, password and active-state
        forms (admin only)
+   * - ``/archive``
+     - patients table with a search form mapped 1:1 onto the core
+       ``ArchiveFilter`` (patient ID/name/birth date, accession number,
+       study date range, modality and the UID fields) plus pagination
+   * - ``/archive/studies/{patient_id}``, ``/archive/series/{study_uid}``,
+       ``/archive/instances/{series_uid}``
+     - drill-down levels with the UID filters pre-filled from the path
+
+The archive browser
+-------------------
+
+The archive browser is **read-only** for both roles (there is no POST
+endpoint in the section; DICOM-level deletion lands together with the
+access-control work). It renders the rows of the core archive query
+events answered by the ``PACS`` component — no file I/O and no worker
+threads involved:
+
+* the search form submits with GET; its fields map 1:1 onto
+  ``ArchiveFilter``. Dates accept ``YYYY-MM-DD`` (what the date inputs
+  submit) and ``YYYYMMDD``; an invalid date re-renders the form with an
+  error instead of querying. Filters naming a lower level also work on
+  upper levels (e.g. a study date range narrows the *patients* table
+  through the studies they own);
+* every table paginates with a fixed page size of 50 rows via
+  ``limit``/``offset`` against the total match count; the previous/next
+  links carry the current search context;
+* rows link down patients → studies → series → instances; the pinned UID
+  of a drill-down level travels in the URL path and renders as a
+  read-only form field;
+* values render through the auto-escaping templates like everywhere
+  else, and identifiers are URL-quoted.
 
 Deployment: TLS-terminating reverse proxy
 -----------------------------------------
@@ -214,16 +276,22 @@ recipe:
         }
     }
 
-with the console configured as:
+with the server configured as:
 
 .. code-block:: yaml
 
     components:
-      AdminWeb:
+      HttpServer:
         on: true
         host: 127.0.0.1     # keep the loopback bind
         port: 11113
+      AdminWeb:
+        on: true
         secure_cookie: true # cookies only travel over the HTTPS hop
+
+One upstream serves every mounted front-end; additional HTTP front-ends
+(e.g. DICOMweb at ``/dicomweb``) need no extra proxy server block unless
+they should be exposed under their own hostname or path rules.
 
 Notes for proxy operators:
 
@@ -241,9 +309,11 @@ Limitations (v0.1)
 * Single-process sessions (see above); restarts sign everybody out.
 * The viewers' user access is page-level (``expose_users_to_viewer``);
   finer semantics are being confirmed for a later release.
-* YAML configuration is not editable through the UI by design — the
-  effective-configuration viewer lands in a later release together with
-  the storage and archive pages (v0.2/v0.3 of the console roadmap).
+* The archive browser shows the database rows only: per-instance DICOM
+  tag dumps, downloads and the storage maintenance page land in v0.2 of
+  the console roadmap; the audit trail and the effective-configuration
+  viewer in v0.3.
+* YAML configuration is not editable through the UI by design.
 
 See also
 --------

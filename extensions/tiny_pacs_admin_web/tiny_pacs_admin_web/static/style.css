@@ -1,16 +1,38 @@
 /* Hand-written styles of the tiny_pacs administration console.
-   No frameworks, no CDNs, no build step. */
+   No frameworks, no CDNs, no build step. Teal theme built around the
+   brand colour #33BBAD. */
 
 :root {
   color-scheme: light;
-  --bg: #f4f6f8;
+
+  /* Surfaces & ink */
+  --bg: #eef5f4;
   --panel: #ffffff;
-  --ink: #1c2733;
-  --muted: #4a5a68;
-  --line: #d9dee3;
-  --accent: #1f6feb;
+  --ink: #10241f;
+  --muted: #4f6a63;
+  --line: #cfe1de;
+
+  /* Brand teal palette */
+  --accent: #33bbad;          /* signature colour */
+  --accent-strong: #1c7a6e;   /* readable teal for links & text */
+  --accent-hover: #16645b;    /* deeper teal for link hover */
+  --on-accent: #06332c;       /* ink that sits on the bright button face */
+  --accent-soft: #e6f6f3;     /* table head / code / readonly fill */
+  --accent-soft-2: #d3ede9;   /* deeper soft fill for row hover */
+  --ring: rgba(51, 187, 173, 0.35);
+
+  /* Top bar */
+  --bar-bg-a: #124840;
+  --bar-bg-b: #0b322d;
+  --bar-ink: #b7e6df;
+
+  /* Status */
   --danger: #b3261e;
-  --bar-ink: #cfe3ef;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(16, 36, 31, 0.06),
+            0 2px 8px rgba(16, 36, 31, 0.05);
 }
 
 * { box-sizing: border-box; }
@@ -24,141 +46,283 @@ body {
   color: var(--ink);
 }
 
+::selection { background: var(--accent); color: var(--on-accent); }
+
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+/* Links --------------------------------------------------------------- */
+a { color: var(--accent-strong); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+/* Top bar ------------------------------------------------------------- */
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  background: #12222f;
+  background: linear-gradient(90deg, var(--bar-bg-a), var(--bar-bg-b));
   color: #fff;
-  padding: 0.55rem 1rem;
+  padding: 0.6rem 1.15rem;
+  border-bottom: 2px solid var(--accent);
+  box-shadow: 0 1px 6px rgba(11, 50, 45, 0.25);
 }
 
-.brand { font-weight: 600; letter-spacing: 0.02em; }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+.brand::before {
+  content: "";
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(51, 187, 173, 0.25);
+}
 .brand .sub { color: var(--bar-ink); font-weight: 400; }
 
 .mainnav { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
 .mainnav a { color: var(--bar-ink); text-decoration: none; }
-.mainnav a:hover { text-decoration: underline; }
+.mainnav a:hover { color: #fff; text-decoration: underline; }
 
 .inline-form { display: inline; margin: 0; }
 
 .linklike {
   background: none;
   border: none;
-  color: var(--bar-ink);
+  color: var(--accent-strong);
   font: inherit;
   padding: 0;
   cursor: pointer;
   text-decoration: underline;
+  border-radius: 3px;
 }
+.linklike:hover { color: var(--accent-hover); }
 
+/* Inside the dark top bar the same button must stay light to be legible. */
+.topbar .linklike { color: var(--bar-ink); }
+.topbar .linklike:hover { color: #fff; }
+
+/* Layout -------------------------------------------------------------- */
 main {
   max-width: 62rem;
-  margin: 1.4rem auto 3rem;
+  margin: 1.6rem auto 3rem;
   padding: 0 1rem;
 }
 
-h2 { margin-top: 0; }
-h3 { margin: 0 0 0.6rem; font-size: 1rem; text-transform: uppercase;
-     letter-spacing: 0.05em; color: var(--muted); }
+h2 {
+  margin: 0 0 1rem;
+  display: inline-block;
+  padding-bottom: 0.3rem;
+  border-bottom: 2px solid var(--accent);
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent-strong);
+}
 
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.9rem 1.1rem;
-  margin-bottom: 1.1rem;
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem;
+  margin-bottom: 1.2rem;
+  box-shadow: var(--shadow);
 }
 
+/* Tables -------------------------------------------------------------- */
 table { border-collapse: collapse; width: 100%; }
 
 th, td {
   border-bottom: 1px solid var(--line);
-  padding: 0.4rem 0.6rem;
+  padding: 0.45rem 0.6rem;
   text-align: left;
   vertical-align: top;
 }
 
-thead th { background: #eef1f4; }
+thead th {
+  background: var(--accent-soft);
+  color: #14453e;
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
+}
+
+tbody tr:hover { background: var(--accent-soft); }
 
 table.kv th {
   width: 17rem;
   background: none;
   border-bottom: 1px solid var(--line);
+  color: #14453e;
   font-weight: 600;
 }
 table.kv tr:last-child th, table.kv tr:last-child td { border-bottom: none; }
+table.kv tbody tr:hover { background: none; }
 
-form label { display: block; margin-top: 0.7rem; font-weight: 600; }
+/* Forms --------------------------------------------------------------- */
+form label { display: block; margin-top: 0.75rem; font-weight: 600; color: var(--ink); }
 
 form input[type="text"], form input[type="password"], form input[type="number"],
-form select {
-  padding: 0.35rem 0.5rem;
-  border: 1px solid #b9c2ca;
-  border-radius: 4px;
+form input[type="date"], form select {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #b9ccc8;
+  border-radius: var(--radius-sm);
   font: inherit;
+  color: var(--ink);
+  background: #fff;
   min-width: 20rem;
   max-width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-form input[readonly] { background: #eef1f4; color: var(--muted); }
+form input[type]:focus, form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
 
+form input[readonly] { background: var(--accent-soft); color: var(--muted); }
+
+/* Archive browser: the search form is a responsive grid; each
+   label+input pair sits in a .field wrapper so one grid cell always
+   holds one complete field. */
+.archive-search .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.7rem 1.1rem;
+}
+
+.archive-search .field label {
+  margin-top: 0;
+  margin-bottom: 0.2rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.archive-search .field input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.archive-search .search-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 0.9rem 0 0;
+}
+
+/* Results table: long UIDs wrap inside their cells instead of
+   stretching the table past the page width */
+table.archive-table { font-size: 0.92rem; }
+table.archive-table td { overflow-wrap: anywhere; }
+table.archive-table th.browse-col,
+table.archive-table td.browse-col {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.pagination {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.8rem;
+}
+
+/* Buttons ------------------------------------------------------------- */
 button[type="submit"], .button {
   background: var(--accent);
-  border: 1px solid var(--accent);
-  color: #fff;
-  border-radius: 4px;
-  padding: 0.4rem 0.95rem;
+  background-image: linear-gradient(180deg, #3cc8b9, #2bb3a4);
+  border: 1px solid #2bb3a4;
+  color: var(--on-accent);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 1.05rem;
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: none;
   display: inline-block;
+  box-shadow: 0 1px 2px rgba(16, 36, 31, 0.10);
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
 }
 
-button[type="submit"]:hover, .button:hover { filter: brightness(1.12); }
-button:disabled { opacity: 0.6; cursor: progress; }
+button[type="submit"]:hover, .button:hover {
+  color: var(--on-accent);
+  filter: brightness(0.97);
+  box-shadow: 0 2px 6px rgba(16, 36, 31, 0.16);
+  text-decoration: none;
+}
+
+button[type="submit"]:active, .button:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(16, 36, 31, 0.14);
+}
+
+button:disabled { opacity: 0.55; cursor: progress; filter: none; box-shadow: none; transform: none; }
 
 button[type="button"] {
   background: var(--panel);
-  border: 1px solid #b9c2ca;
-  border-radius: 4px;
-  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--accent);
+  color: var(--accent-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.38rem 0.85rem;
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
+button[type="button"]:hover { background: var(--accent-soft); }
 
 .danger {
   background: var(--danger);
   border: 1px solid var(--danger);
   color: #fff;
-  border-radius: 4px;
-  padding: 0.4rem 0.95rem;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 1.05rem;
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16, 36, 31, 0.10);
+  transition: filter 0.15s ease;
 }
+.danger:hover { filter: brightness(1.08); }
 
+/* Messages ------------------------------------------------------------ */
 .error {
   background: #fdecea;
   border: 1px solid #f2b8b5;
+  border-left: 4px solid var(--danger);
   color: #7a1c13;
-  padding: 0.5rem 0.8rem;
-  border-radius: 4px;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-sm);
 }
 
 .notice { color: var(--muted); font-style: italic; }
 .hint { color: var(--muted); font-size: 0.88rem; }
 
-.echo-result { margin-left: 0.8rem; }
+.echo-result { margin-left: 0.8rem; color: var(--muted); }
 
 .actions form { display: inline; }
 .actions a { margin-right: 0.5rem; }
 
 code {
-  background: #eef1f4;
-  padding: 0.08rem 0.3rem;
-  border-radius: 3px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-2);
+  color: #14453e;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
   font-size: 0.92em;
 }
 
-.login-form { max-width: 26rem; }
+.login-form { max-width: 26rem; border-top: 3px solid var(--accent); }

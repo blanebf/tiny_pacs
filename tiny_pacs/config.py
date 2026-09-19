@@ -25,7 +25,7 @@ import yaml  # type: ignore[import-untyped]
 from pydicom import uid
 from pynetdicom2 import uids
 
-from . import component, db, devices, pacs, storage
+from . import component, db, devices, http, pacs, storage
 
 ConfigInput: TypeAlias = str | list[str] | IO[bytes] | dict[str, Any]
 
@@ -107,6 +107,7 @@ COMPONENT_REGISTRY: dict[str, type[component.Component[Any]]] = {
     'Database': db.Database,
     'Devices': devices.Devices,
     'PACS': pacs.PACS,
+    'HttpServer': http.HttpServer,
     'FileStorage': storage.FileStorage,
     'InMemoryStorage': storage.InMemoryStorage,
     'TempFileStorage': storage.TempFileStorage

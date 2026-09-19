@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tiny_pacs"
-version = "0.3.0"
+version = "0.4.0"
 description = "A small pure-Python PACS (Picture Archiving and Communication System)"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
@@ -34,6 +34,10 @@ peewee = "^4.3"
 PyYAML = "^6.0"
 trolleybus = "^0.2.0"
 pydantic = "^2.13.4"
+# WSGI server of the shared ``HttpServer`` component; imported lazily
+# and exposed behind the ``http`` extra (below). The dispatcher itself
+# needs nothing but stdlib.
+waitress = { version = "^3.0", optional = true }
 # The optional extension distributions behind the extras below. They
 # reference the packages bundled in this repository, so the extras resolve
 # without the extensions being published yet; scripts/prepare_publish.py
@@ -49,22 +53,29 @@ pytest = "^9.0"
 ruff = "*"
 mypy = "^1.0"
 flake8 = "^7.0"
+# The HttpServer test suite (tests/test_http.py) exercises the real
+# waitress lifecycle, so the optional HTTP dependency is installed for
+# development and CI even though the core imports it lazily.
+waitress = "^3.0"
 
 [tool.poetry.group.docs.dependencies]
 sphinx = "^7.2"
 sphinx-rtd-theme = "^3.0"
 
 [tool.poetry.extras]
-# Convenience extras pulling the optional extension distributions in:
+# The shared HTTP server's waitress dependency (tiny_pacs[http]) and
+# convenience extras pulling the optional extension distributions in:
 # pip install tiny_pacs[admin], tiny_pacs[identity], tiny_pacs[audit],
-# tiny_pacs[web-admin] or tiny_pacs[admin,identity,audit,web-admin]. In
-# the repository they resolve against the bundled packages;
-# scripts/prepare_publish.py turns that into version constraints on the
-# published distributions for PyPI builds.
+# tiny_pacs[web-admin] or tiny_pacs[admin,identity,audit,web-admin].
+# tiny_pacs[web-admin] implies the http extra (it carries waitress). In
+# the repository the extension extras resolve against the bundled
+# packages; scripts/prepare_publish.py turns the paths into version
+# constraints on the published distributions for PyPI builds.
+http = ["waitress"]
 admin = ["tiny-pacs-admin"]
 identity = ["tiny-pacs-identity"]
 audit = ["tiny-pacs-audit"]
-web-admin = ["tiny-pacs-admin-web"]
+web-admin = ["tiny-pacs-admin-web", "waitress"]
 
 [tool.poetry.scripts]
 tiny-pacs = "tiny_pacs.__main__:main"

@@ -4,7 +4,10 @@ Administration commands work offline: :func:`admin_context` loads the YAML
 configuration, builds an event bus with the ``Database`` component plus
 the components being managed, starts the bus (fires ``OnStart``: DB init,
 table binding, migrations) and stops it afterwards. No AE/server thread
-is started.
+is started, and the ``TINY_PACS_HEADLESS`` guard is set for the whole
+session, so a configuration that enables port-binding components (e.g.
+``HttpServer`` with a web front-end) never opens an HTTP port during an
+administration command.
 
 This helper is part of the documented extension-facing API: every
 CLI-bearing extension runs its commands through it.
@@ -14,6 +17,7 @@ Administration against SQLite requires a file-based database
 anything between command invocations and is rejected with a friendly
 error.
 """
+import os
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -21,6 +25,7 @@ from typing import Any
 import trolleybus
 
 from . import config, db
+from .http import HEADLESS_ENV
 
 
 class AdminError(Exception):
@@ -40,7 +45,11 @@ def admin_context(
 
     Loads the configuration, instantiates the ``Database`` component plus
     the requested components, starts the event bus, yields it and stops
-    the bus on exit — no AE/server thread is started.
+    the bus on exit — no AE/server thread is started. The
+    ``TINY_PACS_HEADLESS`` guard is set (and restored) around the whole
+    session, so even an unscoped run that instantiates every enabled
+    component never binds an HTTP port. A previous value of the variable
+    is preserved.
 
     :param config_files: configuration source(s) as accepted by
                          :meth:`tiny_pacs.config.Config.update_config`
@@ -66,25 +75,33 @@ def admin_context(
     database = db.Database(bus, database_config)
 
     names = _component_names(conf, components)
-    for name in names:
-        factory = config.COMPONENT_REGISTRY.get(name)
-        if factory is None:
-            raise AdminError(
-                f'Unknown component {name!r}; is the extension providing '
-                f'it installed?'
-            )
-        component_config = conf.components.get(name)
-        if component_config is None:
-            data: dict[str, Any] = {'on': True}
-        else:
-            data = {**component_config.model_dump(), 'on': True}
-        factory(bus, data)
-
-    bus.start()
+    previous_guard = os.environ.get(HEADLESS_ENV)
+    os.environ[HEADLESS_ENV] = '1'
     try:
-        yield bus, database
+        for name in names:
+            factory = config.COMPONENT_REGISTRY.get(name)
+            if factory is None:
+                raise AdminError(
+                    f'Unknown component {name!r}; is the extension '
+                    f'providing it installed?'
+                )
+            component_config = conf.components.get(name)
+            if component_config is None:
+                data: dict[str, Any] = {'on': True}
+            else:
+                data = {**component_config.model_dump(), 'on': True}
+            factory(bus, data)
+
+        bus.start()
+        try:
+            yield bus, database
+        finally:
+            bus.stop()
     finally:
-        bus.stop()
+        if previous_guard is None:
+            os.environ.pop(HEADLESS_ENV, None)
+        else:
+            os.environ[HEADLESS_ENV] = previous_guard
 
 
 def _component_names(

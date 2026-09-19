@@ -401,3 +401,60 @@ def test_archive_instance_query(pacs_srv: pacs.PACS) -> None:
         events.ArchiveFilter(modality='CT')
     )
     assert [i.uids['sop_instance_uid'] for i in items] == ['1.2.3.5.5.6']
+
+
+def test_archive_uniform_filter_semantics(pacs_srv: pacs.PACS) -> None:
+    """Filters naming a lower level restrict the upper levels too.
+
+    Fixture shape: patient ``test1`` owns studies ``1.2.3.4`` (20200101,
+    accession 1234; series DX/SR) and ``1.2.3.5`` (20200201, accession
+    1235; series CT/PET), every series owns instances.
+    """
+    # Study-level filters on the PATIENT query: patients match through
+    # the studies they own
+    by_accession = pacs_srv.on_archive_patients(
+        events.ArchiveFilter(accession_number='1235')
+    )
+    assert [i.uids['patient_id'] for i in by_accession] == ['test1']
+    assert pacs_srv.on_archive_patients(
+        events.ArchiveFilter(accession_number='9999')
+    ) == []
+    by_date = pacs_srv.on_archive_patients(
+        events.ArchiveFilter(study_date_from='20200115',
+                             study_date_to='20200301')
+    )
+    assert [i.uids['patient_id'] for i in by_date] == ['test1']
+    assert pacs_srv.on_archive_patients(
+        events.ArchiveFilter(study_date_from='20210101')
+    ) == []
+    by_study = pacs_srv.on_archive_patients(
+        events.ArchiveFilter(study_instance_uid='1.2.3.5')
+    )
+    assert [i.uids['patient_id'] for i in by_study] == ['test1']
+    by_series = pacs_srv.on_archive_patients(
+        events.ArchiveFilter(series_instance_uid='1.2.3.4.5')
+    )
+    assert [i.uids['patient_id'] for i in by_series] == ['test1']
+    by_instance = pacs_srv.on_archive_patients(
+        events.ArchiveFilter(sop_instance_uid='1.2.3.5.6.6')
+    )
+    assert [i.uids['patient_id'] for i in by_instance] == ['test1']
+    assert pacs_srv.on_archive_patients(
+        events.ArchiveFilter(patient_id='test1', accession_number='9999')
+    ) == []
+
+    # Series/instance filters on the STUDY query
+    studies = pacs_srv.on_archive_studies(
+        events.ArchiveFilter(series_instance_uid='1.2.3.5.5')
+    )
+    assert [i.uids['study_instance_uid'] for i in studies] == ['1.2.3.5']
+    studies = pacs_srv.on_archive_studies(
+        events.ArchiveFilter(sop_instance_uid='1.2.3.4.5.7')
+    )
+    assert [i.uids['study_instance_uid'] for i in studies] == ['1.2.3.4']
+
+    # Instance filters on the SERIES query
+    series = pacs_srv.on_archive_series(
+        events.ArchiveFilter(sop_instance_uid='1.2.3.5.5.6')
+    )
+    assert [i.uids['series_instance_uid'] for i in series] == ['1.2.3.5.5']

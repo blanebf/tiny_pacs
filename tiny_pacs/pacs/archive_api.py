@@ -6,6 +6,12 @@ tables. The items carry both the DB-level attributes and the DICOM view
 (tag to ``(VR, value)``) built from the model mappings, so consumers —
 the web administration app, DICOMweb — never re-derive DICOM semantics
 from the tables.
+
+Filter semantics are uniform across the levels: a filter naming a level
+below the queried one restricts the results to the rows *owning* at
+least one matching lower-level row (e.g. patients are matched through
+their studies when a study date range is given), exactly like the
+modality filter always has.
 """
 from typing import Any
 
@@ -41,7 +47,7 @@ def patients(payload: events.ArchiveFilter) -> list[events.ArchiveItem]:
     """
     query: peewee.ModelSelect[Any] = models.Patient.select()
     query = _patient_filters(query, payload)
-    if payload.modality:
+    if _has_study_filters(payload):
         query = query.where(models.Patient.id << _patient_ids(payload))
     return _items('patient', models.Patient, query, payload)
 
@@ -62,7 +68,7 @@ def studies(payload: events.ArchiveFilter) -> list[events.ArchiveItem]:
     ).join(models.Patient)
     query = _patient_filters(query, payload)
     query = _study_filters(query, payload)
-    if payload.modality:
+    if _has_series_filters(payload):
         query = query.where(models.Study.id << _study_ids(payload))
     return _items('study', models.Study, query, payload)
 
@@ -83,12 +89,9 @@ def series(payload: events.ArchiveFilter) -> list[events.ArchiveItem]:
     ).join(models.Study).join(models.Patient)
     query = _patient_filters(query, payload)
     query = _study_filters(query, payload)
-    if payload.series_instance_uid:
-        query = query.where(
-            models.Series.series_instance_uid == payload.series_instance_uid
-        )
-    if payload.modality:
-        query = query.where(models.Series.modality == payload.modality)
+    query = _series_filters(query, payload)
+    if payload.sop_instance_uid:
+        query = query.where(models.Series.id << _series_ids(payload))
     return _items('series', models.Series, query, payload)
 
 
@@ -110,12 +113,7 @@ def instances(payload: events.ArchiveFilter) -> list[events.ArchiveItem]:
         .join(models.Patient)
     query = _patient_filters(query, payload)
     query = _study_filters(query, payload)
-    if payload.series_instance_uid:
-        query = query.where(
-            models.Series.series_instance_uid == payload.series_instance_uid
-        )
-    if payload.modality:
-        query = query.where(models.Series.modality == payload.modality)
+    query = _series_filters(query, payload)
     if payload.sop_instance_uid:
         query = query.where(
             models.Instance.sop_instance_uid == payload.sop_instance_uid
@@ -123,16 +121,41 @@ def instances(payload: events.ArchiveFilter) -> list[events.ArchiveItem]:
     return _items('instance', models.Instance, query, payload)
 
 
+def _has_study_filters(payload: events.ArchiveFilter) -> bool:
+    """Whether the filter restricts levels below PATIENT."""
+    return bool(payload.accession_number or payload.study_date_from
+                or payload.study_date_to or payload.study_instance_uid
+                or _has_series_filters(payload))
+
+
+def _has_series_filters(payload: events.ArchiveFilter) -> bool:
+    """Whether the filter restricts levels below STUDY."""
+    return bool(payload.series_instance_uid or payload.sop_instance_uid
+                or payload.modality)
+
+
 def _patient_ids(payload: events.ArchiveFilter) -> Any:
-    """Patient ids owning at least one study with the filtered modality."""
-    return models.Study.select(models.Study.patient)\
-        .where(models.Study.id << _study_ids(payload))
+    """Patient ids owning at least one study matching the filter."""
+    query: peewee.ModelSelect[Any] = models.Study.select(models.Study.patient)
+    query = _study_filters(query, payload)
+    if _has_series_filters(payload):
+        query = query.where(models.Study.id << _study_ids(payload))
+    return query
 
 
 def _study_ids(payload: events.ArchiveFilter) -> Any:
-    """Study ids owning at least one series with the filtered modality."""
-    return models.Series.select(models.Series.study)\
-        .where(models.Series.modality == payload.modality)
+    """Study ids owning at least one series matching the filter."""
+    query: peewee.ModelSelect[Any] = models.Series.select(models.Series.study)
+    query = _series_filters(query, payload)
+    if payload.sop_instance_uid:
+        query = query.where(models.Series.id << _series_ids(payload))
+    return query
+
+
+def _series_ids(payload: events.ArchiveFilter) -> Any:
+    """Series ids owning at least one instance matching the filter."""
+    return models.Instance.select(models.Instance.series)\
+        .where(models.Instance.sop_instance_uid == payload.sop_instance_uid)
 
 
 def _patient_filters(
@@ -172,6 +195,20 @@ def _study_filters(
         query = query.where(
             models.Study.study_instance_uid == payload.study_instance_uid
         )
+    return query
+
+
+def _series_filters(
+        query: 'peewee.ModelSelect[Any]',
+        payload: events.ArchiveFilter
+) -> 'peewee.ModelSelect[Any]':
+    """Applies the series-level filters of an archive query."""
+    if payload.series_instance_uid:
+        query = query.where(
+            models.Series.series_instance_uid == payload.series_instance_uid
+        )
+    if payload.modality:
+        query = query.where(models.Series.modality == payload.modality)
     return query
 
 

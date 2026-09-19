@@ -30,6 +30,7 @@ import pytest
 import trolleybus
 from tiny_pacs import db as core_db
 from tiny_pacs import events as core_events
+from tiny_pacs import pacs as core_pacs
 from tiny_pacs_admin import store as admin_store
 from tiny_pacs_identity.users import Users
 
@@ -319,6 +320,9 @@ def console(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     * ``with_registries`` (default True): starts the real ``DeviceStore``
       and ``Users`` components (imported by the test process only) so the
       device/user features have production listeners;
+    * ``with_pacs`` (default False): starts the real core ``PACS``
+      component so the archive query events have a production listener
+      (datasets can be recorded through ``StoreDataset``);
     * ``user_verify`` (default True): with registries off, a fake
       ``UserVerify`` listener accepting ``password='secret'`` for any
       username is installed instead;
@@ -328,7 +332,8 @@ def console(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     The started bus is an ``env`` namespace: ``bus``, ``database``,
     ``web`` (the headless ``AdminWeb`` component), ``state``, ``app`` and
     ``client`` (a :class:`WSGIClient`). ``TINY_PACS_HEADLESS`` is set for
-    every build, so the component never binds a port in unit tests.
+    every build, so the component never contributes its console app in
+    unit tests.
     """
     monkeypatch.setenv('TINY_PACS_HEADLESS', '1')
     started: list[tuple[trolleybus.EventBus, core_db.Database]] = []
@@ -336,6 +341,7 @@ def console(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 
     def build(
             with_registries: bool = True,
+            with_pacs: bool = False,
             user_verify: bool = True,
             web_config: dict[str, Any] | None = None,
             **state_kwargs: Any
@@ -355,6 +361,8 @@ def console(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
                     username=str(payload.get('username')))
                     if payload.get('password') == 'secret' else None)
             )
+        if with_pacs:
+            core_pacs.PACS(bus, {'on': True})
         bus.start()
         started.append((bus, database))
         state = web_module.AppState(

@@ -1,9 +1,12 @@
 """Tests of the headless administration runtime."""
+import os
+import threading
 from typing import Any
 
 import pytest
 
 from tiny_pacs import admin, events
+from tiny_pacs.http import HEADLESS_ENV
 
 
 def _file_db_config(tmp_path_factory: Any) -> dict[str, Any]:
@@ -95,3 +98,28 @@ def test_storage_component_not_required(tmp_path_factory: Any) -> None:
     with admin.admin_context(conf, components=[]) as (bus, database):
         assert bus is not None
         assert database.db is not None
+
+
+def test_admin_context_sets_headless_guard(
+        tmp_path_factory: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The guard keeps port-binding components from opening HTTP during
+    unscoped CLI runs (every enabled component is instantiated)."""
+    monkeypatch.delenv(HEADLESS_ENV, raising=False)
+    conf = _file_db_config(tmp_path_factory)
+    conf['components']['HttpServer'] = {'on': True, 'port': 0}
+    with admin.admin_context(conf) as (bus, _):
+        assert os.environ.get(HEADLESS_ENV) == '1'
+        # The HttpServer is instantiated but bound nothing
+        assert bus.send_one(events.HttpMountsQuery, None) == []
+        assert not [thread for thread in threading.enumerate()
+                    if thread.name == 'tiny_pacs-http']
+    assert HEADLESS_ENV not in os.environ, 'the guard is removed again'
+
+
+def test_admin_context_restores_previous_guard(
+        tmp_path_factory: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(HEADLESS_ENV, 'preset')
+    conf = _file_db_config(tmp_path_factory)
+    with admin.admin_context(conf):
+        assert os.environ[HEADLESS_ENV] == '1'
+    assert os.environ[HEADLESS_ENV] == 'preset'

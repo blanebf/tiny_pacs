@@ -268,6 +268,49 @@ class ServicesRegistry(trolleybus.Event[None, list[ServiceHook]]):
 
 
 # ---------------------------------------------------------------------------
+# Shared HTTP server events
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class HttpAppHook:
+    """One WSGI application contributed to the shared HTTP server.
+
+    :ivar name: providing component name (logging/introspection)
+    :ivar prefix: mount prefix; ``/`` is the root/catch-all application
+    :ivar app: WSGI callable (no framework assumed)
+    """
+
+    #: Providing component name
+    name: str
+
+    #: Mount prefix, ``/`` for the root/catch-all app
+    prefix: str
+
+    #: WSGI callable serving the mount
+    app: Callable[[dict, Callable], Iterable[bytes]]
+
+
+class HttpAppsRegistry(trolleybus.Event[None, list[HttpAppHook]]):
+    """Request the WSGI applications to mount on the shared HTTP server.
+
+    Broadcast by the :class:`~tiny_pacs.http.HttpServer` component once
+    the bus has started (:class:`trolleybus.OnStarted`); every HTTP
+    front-end component answers with its hooks — an empty list when it
+    refuses to mount itself (failed self-checks, headless run), which
+    never affects the shared server or the other mounts.
+    """
+
+
+class HttpMountsQuery(trolleybus.Event[None, list[tuple[str, str]]]):
+    """Request the HTTP applications mounted on the shared server.
+
+    Answered by the :class:`~tiny_pacs.http.HttpServer` component with
+    ``(component name, prefix)`` tuples for every mounted application;
+    the result is empty while the server is dormant (nothing bound).
+    """
+
+
+# ---------------------------------------------------------------------------
 # Storage events
 # ---------------------------------------------------------------------------
 
@@ -446,6 +489,19 @@ class TableCounts(trolleybus.Event[None, dict[str, int]]):
     """
 
 
+class CloseConnection(trolleybus.Event[None, None]):
+    """Close the database connection of the calling thread.
+
+    peewee tracks connections per thread, so this event must be handled in
+    (and broadcast from) the thread that performed the queries. With the
+    pooled DB drivers the connection is checked back into the pool for
+    reuse; a worker thread that exits without it leaks its connection
+    until the pool limit is reached. Sent at every thread work-unit
+    boundary: incoming DICOM association threads, the per-association DUL
+    thread and each served HTTP request.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Device events
 # ---------------------------------------------------------------------------
@@ -589,6 +645,12 @@ class ArchiveFilter:
     :ivar sop_instance_uid: exact SOP Instance UID match
     :ivar limit: maximum number of items returned
     :ivar offset: number of items skipped (pagination)
+
+    Filter semantics are uniform across the queried levels: a filter
+    naming a level below the queried one restricts the results to the
+    rows *owning* at least one matching lower-level row (e.g. a Study
+    Date range on a PATIENT query matches patients through their
+    studies, and the Series Modality filter has always worked this way).
     """
 
     patient_id: str | None = None
