@@ -55,19 +55,171 @@ TABLES: list[type[peewee.Model]] = [
     models.Patient, models.Study, models.Series, models.Instance
 ]
 
+#: Columns of the version-1 ``patient`` table in table order, used by
+#: migration 2 to copy the rows into the rebuilt table
+_PATIENT_V1_COLUMNS = (
+    'id', 'patient_name', 'patient_id', 'issuer_of_patient_id',
+    'patient_birth_date', 'patient_birth_time', 'patient_sex',
+    'other_patient_names', 'ethnic_group', 'patient_comments'
+)
+
+#: Columns added by migration 2
+_PATIENT_V2_COLUMNS = ('patient_identity_removed', 'deidentification_method')
+
+
+def _upgrade_patient_identity(migrator: Any) -> list[Any]:
+    """Migration 2: the DICOM patient identity key.
+
+    Replaces the single-column unique constraint on ``patient_id`` with
+    the (``patient_id``, ``issuer_of_patient_id``) pair (PS3.3 C.7.1.1:
+    the issuer scopes the uniqueness of the ID), normalizes issuer-less
+    rows to the empty issuer and adds the de-identification columns
+    ``patient_identity_removed`` / ``deidentification_method``.
+
+    Executed directly through raw SQL (no ``playhouse`` operations are
+    returned): SQLite cannot drop an inline column constraint in place,
+    so the table is rebuilt with the procedure recommended for SQLite
+    DDL — foreign key enforcement is off by default and the child tables
+    keep their ``REFERENCES "patient"`` clauses through the drop and
+    rename — and the new table definition comes from the model itself,
+    so migrated and fresh databases end up identical.
+
+    :param migrator: driver-specific ``playhouse.migrate`` migrator
+    :type migrator: Any
+    :return: no declarative operations; the migration ran to completion
+    :rtype: list
+    """
+    database = migrator.database
+    if not database.table_exists('patient'):
+        return []
+    if isinstance(database, peewee.SqliteDatabase):
+        _rebuild_patient_sqlite(database)
+    else:
+        _migrate_patient_postgres(database)
+    return []
+
+
+def _rebuild_patient_sqlite(database: peewee.SqliteDatabase) -> None:
+    """Rebuilds the ``patient`` table in place on SQLite.
+
+    :param database: the active SQLite connection wrapper
+    :type database: peewee.SqliteDatabase
+    """
+    class _PatientV2(models.Patient):
+        """Version-2 patient table under a temporary name."""
+
+        class Meta:
+            table_name = 'patient__v2'
+
+    cursor = database.execute_sql('PRAGMA table_info("patient")')
+    existing = {row[1] for row in cursor.fetchall()}
+    target: list[str] = []
+    source: list[str] = []
+    for column in _PATIENT_V1_COLUMNS:
+        if column not in existing and column != 'issuer_of_patient_id':
+            continue
+        target.append(f'"{column}"')
+        if column == 'issuer_of_patient_id':
+            source.append(
+                'COALESCE("issuer_of_patient_id", \'\')'
+                if column in existing else '\'\''
+            )
+        else:
+            source.append(f'"{column}"')
+    target.extend(f'"{c}"' for c in _PATIENT_V2_COLUMNS)
+    source.extend(['\'\'', '\'\''])
+
+    _PatientV2.create_table(safe=True)
+    database.execute_sql(
+        f'INSERT INTO "patient__v2" ({", ".join(target)}) '
+        f'SELECT {", ".join(source)} FROM "patient"'
+    )
+    # Index names of the temporary table, collected before the rename
+    # (sqlite_master rows follow the table)
+    cursor = database.execute_sql(
+        'SELECT "name" FROM "sqlite_master" WHERE "type" = \'index\' '
+        'AND "tbl_name" = \'patient__v2\''
+    )
+    temp_indexes = [
+        row[0] for row in cursor.fetchall()
+        if not row[0].startswith('sqlite_autoindex')
+    ]
+    database.execute_sql('DROP TABLE "patient"')
+    database.execute_sql('ALTER TABLE "patient__v2" RENAME TO "patient"')
+    # The indexes created for the temporary table keep its name prefix;
+    # drop them and recreate them from the model so the migrated
+    # database matches a fresh one exactly
+    for name in temp_indexes:
+        database.execute_sql(f'DROP INDEX IF EXISTS "{name}"')
+    models.Patient.create_table(safe=True)
+
+
+def _migrate_patient_postgres(database: peewee.PostgresqlDatabase) -> None:
+    """Applies the identity-key migration on PostgreSQL.
+
+    ``DEFAULT ''`` clauses serve only to backfill the existing rows and
+    are dropped again afterwards, so the migrated schema matches the
+    fresh one exactly (peewee defaults are Python-side, never server
+    defaults). The version-1 uniqueness of ``patient_id`` arrives both
+    as a ``patient_patient_id_key`` constraint (hand-written schemas)
+    and as a ``patient_patient_id`` unique index (peewee emits
+    ``unique=True`` as ``CREATE UNIQUE INDEX``), so both forms are
+    dropped.
+
+    :param database: the active PostgreSQL connection wrapper
+    :type database: peewee.PostgresqlDatabase
+    """
+    for statement in (
+        'UPDATE "patient" SET "issuer_of_patient_id" = \'\' '
+        'WHERE "issuer_of_patient_id" IS NULL',
+        'ALTER TABLE "patient" ALTER COLUMN "issuer_of_patient_id" '
+        'SET NOT NULL',
+        'ALTER TABLE "patient" ADD COLUMN IF NOT EXISTS '
+        '"patient_identity_removed" VARCHAR(16) NOT NULL DEFAULT \'\'',
+        'ALTER TABLE "patient" ADD COLUMN IF NOT EXISTS '
+        '"deidentification_method" TEXT NOT NULL DEFAULT \'\'',
+        'ALTER TABLE "patient" ALTER COLUMN "patient_identity_removed" '
+        'DROP DEFAULT',
+        'ALTER TABLE "patient" ALTER COLUMN "deidentification_method" '
+        'DROP DEFAULT',
+        'ALTER TABLE "patient" DROP CONSTRAINT IF EXISTS '
+        '"patient_patient_id_key"',
+        'DROP INDEX IF EXISTS "patient_patient_id_key"',
+        'DROP INDEX IF EXISTS "patient_patient_id"'
+    ):
+        database.execute_sql(statement)
+    # Creates the composite unique index and the issuer index from the
+    # current model definition (parity with fresh databases)
+    models.Patient.create_table(safe=True)
+
+
 #: Schema migrations of the PACS tables
 MIGRATIONS: list[schema.Migration] = [
-    schema.create_tables_migration(TABLES, 'Create PACS tables')
+    schema.create_tables_migration(TABLES, 'Create PACS tables'),
+    schema.Migration(
+        2,
+        'Patient identity key: (PatientID, IssuerOfPatientID) unique, '
+        'de-identification columns',
+        _upgrade_patient_identity
+    )
 ]
 
 
 class PACSConfig(component.ComponentConfig):
     """Configuration of the :class:`PACS` component.
 
-    The PACS component currently has no settings beyond the common ``on``
-    flag; this model exists so the component provides its own config type to
-    the loader like every other component.
+    :ivar anonymous_patient_ids: Patient ID values (recognized
+        case-insensitively) treated as de-identification placeholders
+        of incoming datasets. Datasets carrying one of them — like the
+        datasets with an empty Patient ID or with the normative PS3.15 E
+        de-identification attributes — are stored without demographic
+        conflict warnings, because the identity attributes of anonymized
+        data carry no identity semantics (one shared record per distinct
+        Patient ID string).
     """
+
+    anonymous_patient_ids: list[str] = \
+        list(patient_api.DEFAULT_ANONYMOUS_PATIENT_IDS)
 
 
 class PACS(component.Component[PACSConfig]):
@@ -106,7 +258,9 @@ class PACS(component.Component[PACSConfig]):
         :type config: PACSConfig or dict
         """
         super().__init__(bus, config)
-        self.patient_api = patient_api.PatientAPI(bus)
+        self.patient_api = patient_api.PatientAPI(
+            bus, self.config.anonymous_patient_ids
+        )
         self.study_api = study_api.StudyAPI(bus)
         self.series_api = series_api.SeriesAPI(bus)
         self.instance_api = instance_api.InstanceAPI(bus)
@@ -347,6 +501,12 @@ class PACS(component.Component[PACSConfig]):
                 (level.value > QRLevelRank.PATIENT.value and
                  hasattr(ds, 'PatientID'))):
             query = query.where(models.Patient.patient_id == ds.PatientID)
+
+        issuer = getattr(ds, 'IssuerOfPatientID', '')
+        if issuer:
+            query = query.where(
+                models.Patient.issuer_of_patient_id == str(issuer)
+            )
 
         if (level == QRLevelRank.STUDY or
                 (level.value > QRLevelRank.STUDY.value and

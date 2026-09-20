@@ -1,5 +1,9 @@
+import logging
+import pathlib
+import sqlite3
 import uuid
 
+import peewee
 import pytest
 import trolleybus
 from pydicom import Dataset
@@ -458,3 +462,300 @@ def test_archive_uniform_filter_semantics(pacs_srv: pacs.PACS) -> None:
         events.ArchiveFilter(sop_instance_uid='1.2.3.5.5.6')
     )
     assert [i.uids['series_instance_uid'] for i in series] == ['1.2.3.5.5']
+
+
+def _identity_ds(**overrides: object) -> Dataset:
+    """Complete storable dataset with overridable attributes.
+
+    Every call carries a unique study/series/instance UID chain so
+    repeated stores create separate studies.
+    """
+    suffix = str(uuid.uuid4().int)[:6]
+    ds = Dataset()
+    ds.SpecificCharacterSet = 'ISO_IR 192'
+    ds.PatientID = 'identity_test'
+    ds.PatientName = 'Identity^Test'
+    ds.PatientSex = 'M'
+    ds.PatientBirthDate = '19700101'
+    ds.StudyInstanceUID = f'1.9.{suffix}'
+    ds.StudyDate = '20210101'
+    ds.SeriesInstanceUID = f'1.9.{suffix}.1'
+    ds.Modality = 'CT'
+    ds.SOPInstanceUID = f'1.9.{suffix}.1.1'
+    ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+    for key, value in overrides.items():
+        setattr(ds, key, value)
+    return ds
+
+
+def test_store_same_patient_id_different_issuer(
+        pacs_srv: pacs.PACS) -> None:
+    """The identity key is (PatientID, IssuerOfPatientID)."""
+    pacs_srv.c_store(_identity_ds(IssuerOfPatientID='HOSP1'))
+    pacs_srv.c_store(_identity_ds(IssuerOfPatientID='HOSP2'))
+    # Same identity key attaches instead of failing the unique constraint
+    pacs_srv.c_store(_identity_ds(IssuerOfPatientID='HOSP2'))
+
+    rows = models.Patient.select().where(
+        models.Patient.patient_id == 'identity_test'
+    ).order_by(models.Patient.issuer_of_patient_id)
+    assert [r.issuer_of_patient_id for r in rows] == ['HOSP1', 'HOSP2']
+
+    request = Dataset()
+    request.SpecificCharacterSet = 'ISO_IR 192'
+    request.QueryRetrieveLevel = 'PATIENT'
+    request.PatientID = 'identity_test'
+    request.IssuerOfPatientID = 'HOSP2'
+    results = list(pacs_srv.c_find(request))
+    assert len(results) == 1
+    assert results[0].IssuerOfPatientID == 'HOSP2'
+
+
+def test_store_conflicting_demographics_attaches_and_warns(
+        pacs_srv: pacs.PACS, caplog: pytest.LogCaptureFixture) -> None:
+    """Demographics never split a patient: the identity key wins."""
+    ds = _identity_ds(PatientID='test1', PatientName='Other^Person',
+                      PatientSex='F', PatientBirthDate='19991231')
+    with caplog.at_level(logging.WARNING, logger='PatientAPI'):
+        pacs_srv.c_store(ds)
+
+    patient = models.Patient.get(models.Patient.patient_id == 'test1')
+    # Attached to the existing record, stored demographics kept
+    assert patient.patient_name == 'Test^Test^Test'
+    assert patient.patient_sex == 'M'
+    assert patient.patient_birth_date == '19660101'
+    assert 'Demographic conflict' in caplog.text
+    # Only the conflicting attribute names are logged, no PHI values
+    assert 'PatientName' in caplog.text
+    assert 'Other^Person' not in caplog.text
+    assert models.Patient.select().count() == 1
+
+
+def test_store_deidentified_dataset(
+        pacs_srv: pacs.PACS, caplog: pytest.LogCaptureFixture) -> None:
+    """PS3.15 E markers attach silently and are recorded."""
+    ds = _identity_ds(PatientID='0', PatientIdentityRemoved='YES',
+                      DeidentificationMethod='basic profile')
+    with caplog.at_level(logging.WARNING, logger='PatientAPI'):
+        pacs_srv.c_store(ds)
+    # A later dataset without the markers but with conflicting
+    # demographics still attaches silently: the record is de-identified
+    pacs_srv.c_store(
+        _identity_ds(PatientID='0', PatientSex='F',
+                     PatientBirthDate='19010101')
+    )
+
+    records = models.Patient.select().where(
+        models.Patient.patient_id == '0'
+    )
+    assert records.count() == 1
+    patient = records.get()
+    assert patient.patient_identity_removed == 'YES'
+    assert patient.deidentification_method == 'basic profile'
+    assert 'Demographic conflict' not in caplog.text
+
+
+def test_store_deidentification_code_sequence(pacs_srv: pacs.PACS) -> None:
+    """The method is derived from the code sequence when (0012,0063)
+    is absent."""
+    item = Dataset()
+    item.CodeValue = '113100'
+    item.CodingSchemeDesignator = 'DCM'
+    item.CodeMeaning = 'Basic Confidentiality Profile'
+    ds = _identity_ds(PatientID='code_seq')
+    ds.DeidentificationMethodCodeSequence = [item]
+    pacs_srv.c_store(ds)
+
+    patient = models.Patient.get(models.Patient.patient_id == 'code_seq')
+    assert patient.deidentification_method == \
+        'Basic Confidentiality Profile'
+    assert pacs_srv.patient_api.is_anonymized(ds, 'code_seq')
+
+
+def test_store_default_placeholder_anonymous(
+        pacs_srv: pacs.PACS, caplog: pytest.LogCaptureFixture) -> None:
+    """The default placeholder ID is an anonymized bucket: conflicting
+    demographics attach silently."""
+    with caplog.at_level(logging.WARNING, logger='PatientAPI'):
+        pacs_srv.c_store(_identity_ds(PatientID='ANONYMOUS'))
+        pacs_srv.c_store(_identity_ds(PatientID='ANONYMOUS',
+                                      PatientSex='F'))
+    records = models.Patient.select().where(
+        models.Patient.patient_id == 'ANONYMOUS'
+    )
+    assert records.count() == 1
+    assert records.get().patient_sex == 'M'
+    assert 'Demographic conflict' not in caplog.text
+    # Placeholder recognition is case-insensitive
+    ds = _identity_ds(PatientID='anonymous')
+    assert pacs_srv.patient_api.is_anonymized(ds, 'anonymous')
+
+
+def test_store_configured_anonymous_patient_ids(
+        caplog: pytest.LogCaptureFixture) -> None:
+    """The placeholder list is configurable and only silences those."""
+    bus = trolleybus.EventBus()
+    db.Database(bus, {'db_name': str(uuid.uuid4())})
+    srv = pacs.PACS(bus, {'anonymous_patient_ids': ['0', 'research']})
+    bus.start()
+
+    with caplog.at_level(logging.WARNING, logger='PatientAPI'):
+        srv.c_store(_identity_ds(PatientID='0'))
+        srv.c_store(_identity_ds(PatientID='0', PatientSex='F'))
+        srv.c_store(_identity_ds(PatientID='RESEARCH', PatientSex='M'))
+        srv.c_store(_identity_ds(PatientID='RESEARCH', PatientSex='F'))
+    assert models.Patient.select().where(
+        models.Patient.patient_id == '0'
+    ).count() == 1
+    assert models.Patient.select().where(
+        models.Patient.patient_id == 'RESEARCH'
+    ).count() == 1
+    assert 'Demographic conflict' not in caplog.text
+
+    # A regular ID with conflicting demographics still warns
+    srv.c_store(_identity_ds(PatientID='real_id', PatientSex='M'))
+    srv.c_store(_identity_ds(PatientID='real_id', PatientSex='F'))
+    assert 'Demographic conflict' in caplog.text
+
+
+def test_store_missing_patient_id(pacs_srv: pacs.PACS) -> None:
+    """Datasets without a Patient ID share one record."""
+    first = _identity_ds()
+    del first.PatientID
+    second = _identity_ds()
+    del second.PatientID
+    pacs_srv.c_store(first)
+    pacs_srv.c_store(second)
+
+    records = models.Patient.select().where(models.Patient.patient_id == '')
+    assert records.count() == 1
+    assert records.get().issuer_of_patient_id == ''
+
+
+def test_store_other_patient_names_multivalue(pacs_srv: pacs.PACS) -> None:
+    """Wire-decoded multi-valued names are stored as a DICOM string,
+    not as a bracketed repr (pydicom MultiValue is not a list)."""
+    ds = _identity_ds(PatientID='multiname')
+    ds.add_new(0x00101001, 'PN', r'Other^One\Other^Two')
+    pacs_srv.c_store(ds)
+
+    patient = models.Patient.get(models.Patient.patient_id == 'multiname')
+    assert patient.other_patient_names == 'Other^One\\Other^Two'
+
+
+def test_store_creation_race_retries_as_attach(
+        pacs_srv: pacs.PACS, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A lost creation race attaches to the winner's record instead of
+    failing the C-STORE."""
+    api = pacs_srv.patient_api
+    original = api.create_patient
+    raced: list[int] = []
+
+    def racing(
+            ds: Dataset, patient_id: str, issuer: str
+    ) -> models.Patient:
+        if not raced:
+            raced.append(1)
+            # The concurrent winner creates the record first, then the
+            # loser's insert violates the identity key
+            original(ds, patient_id, issuer)
+            raise peewee.IntegrityError('UNIQUE constraint failed')
+        return original(ds, patient_id, issuer)
+
+    monkeypatch.setattr(api, 'create_patient', racing)
+    pacs_srv.c_store(_identity_ds(PatientID='race_winner'))
+    assert models.Patient.select().where(
+        models.Patient.patient_id == 'race_winner'
+    ).count() == 1
+
+
+_V1_PATIENT_DDL = (
+    'CREATE TABLE "patient" ("id" INTEGER NOT NULL PRIMARY KEY, '
+    '"patient_name" VARCHAR(324), "patient_id" VARCHAR(64) NOT NULL '
+    'UNIQUE, "issuer_of_patient_id" VARCHAR(64), '
+    '"patient_birth_date" VARCHAR(8), "patient_birth_time" VARCHAR(14), '
+    '"patient_sex" VARCHAR(16), "other_patient_names" TEXT NOT NULL, '
+    '"ethnic_group" VARCHAR(16), "patient_comments" TEXT NOT NULL)'
+)
+
+
+def test_patient_identity_migration(tmp_path: pathlib.Path) -> None:
+    """A legacy version-1 SQLite database is upgraded in place.
+
+    Data is preserved, NULL issuers normalize to the empty issuer, the
+    foreign key children survive the rebuild and the unique key becomes
+    the (patient_id, issuer_of_patient_id) pair.
+    """
+    db_name = str(tmp_path / 'pacs.db')
+    con = sqlite3.connect(db_name)
+    con.execute(_V1_PATIENT_DDL)
+    con.execute(
+        'INSERT INTO patient (id, patient_name, patient_id, '
+        "issuer_of_patient_id, other_patient_names, patient_comments) "
+        "VALUES (1, 'A^B', 'p1', 'HOSP', '', '')"
+    )
+    con.execute(
+        'INSERT INTO patient (id, patient_name, patient_id, '
+        "issuer_of_patient_id, other_patient_names, patient_comments) "
+        "VALUES (2, 'C^D', 'p2', NULL, '', '')"
+    )
+    con.commit()
+    con.close()
+
+    bus = trolleybus.EventBus()
+    database = db.Database(bus, {'driver': 'sqlite', 'db_name': db_name,
+                                 'uri': False})
+    pacs.PACS(bus, {})
+    bus.start()
+
+    row = db.SchemaVersion.get(db.SchemaVersion.component == 'PACS')
+    assert row.version == 2
+    rows = list(models.Patient.select().order_by(models.Patient.id))
+    assert [(r.patient_id, r.issuer_of_patient_id) for r in rows] == \
+        [('p1', 'HOSP'), ('p2', '')]
+    assert rows[0].patient_name == 'A^B'
+    assert rows[1].patient_identity_removed == ''
+    assert rows[1].deidentification_method == ''
+
+    # The foreign key children survive the rebuild intact
+    assert database.db is not None
+    study = models.Study.create(patient=rows[0], study_instance_uid='2.1')
+    assert study.patient.patient_id == 'p1'
+    cursor = database.db.execute_sql('PRAGMA foreign_key_check')
+    assert cursor.fetchall() == []
+
+    # The ID alone is no longer unique; the pair is
+    models.Patient.create(patient_id='p1', issuer_of_patient_id='OTHER')
+    with pytest.raises(peewee.IntegrityError):
+        models.Patient.create(patient_id='p1', issuer_of_patient_id='HOSP')
+
+    database.db.close()
+
+
+def test_patient_identity_migration_idempotent(
+        tmp_path: pathlib.Path) -> None:
+    """Restarting over a migrated database applies nothing again."""
+    db_name = str(tmp_path / 'pacs.db')
+    con = sqlite3.connect(db_name)
+    con.execute(_V1_PATIENT_DDL)
+    con.commit()
+    con.close()
+
+    config = {'driver': 'sqlite', 'db_name': db_name, 'uri': False}
+    bus = trolleybus.EventBus()
+    database = db.Database(bus, config)
+    pacs.PACS(bus, {})
+    bus.start()
+    models.Patient.create(patient_id='p1', issuer_of_patient_id='')
+    assert database.db is not None
+    database.db.close()
+
+    bus = trolleybus.EventBus()
+    database = db.Database(bus, config)
+    pacs.PACS(bus, {})
+    bus.start()
+    row = db.SchemaVersion.get(db.SchemaVersion.component == 'PACS')
+    assert row.version == 2
+    assert models.Patient.select().count() == 1
+    assert database.db is not None
+    database.db.close()

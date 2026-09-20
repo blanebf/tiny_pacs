@@ -227,6 +227,27 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   UID narrows a PATIENT-level query through the studies the patients
   own, exactly like the modality filter always did). Previously such
   filters were silently ignored on the levels above theirs.
+- Patient identity handling (C-STORE): the patient record key is now the
+  DICOM identity key — the pair of Patient ID (0010,0020) and Issuer of
+  Patient ID (0010,0021), PS3.3 C.7.1.1 — instead of a globally unique
+  Patient ID. The same ID string issued by different assigning
+  authorities forms separate records; issuer-less datasets share the
+  empty-issuer namespace. Demographics no longer take part in matching:
+  a dataset that conflicts by name, sex or birth date attaches to the
+  existing record (stored first-seen demographics win) and the conflict
+  is reported as a WARNING only — previously it violated the unique
+  constraint and failed the C-STORE. De-identified datasets — Patient
+  Identity Removed (0012,0062) = YES, a non-empty De-identification
+  Method (0012,0063) or Code Sequence (0012,0064) per PS3.15 E, an
+  empty Patient ID, or a placeholder from the new
+  `PACS.anonymous_patient_ids` option (default `[ANONYMOUS]`,
+  case-insensitive) — attach silently and their markers are recorded on
+  the patient record (`patient_identity_removed`,
+  `deidentification_method`). C-MOVE/C-GET identifiers are now narrowed
+  by `IssuerOfPatientID` when present. PACS schema version 2 migrates
+  existing databases in place (NULL issuers normalize to the empty
+  issuer; on SQLite the table is rebuilt because a column constraint
+  cannot be dropped in place).
 - `admin_context` sets (and restores) the `TINY_PACS_HEADLESS` guard
   around the whole headless administration session, so even an unscoped
   CLI run that instantiates every enabled component (e.g. `tiny-pacs

@@ -134,6 +134,14 @@ A complete example
             # password: secret
       PACS:
         on: true
+        # Optional: Patient IDs (recognized case-insensitively) treated
+        # as de-identification placeholders of incoming datasets. Such
+        # datasets — like the ones with the PS3.15 E de-identification
+        # attributes or with an empty Patient ID — are stored without
+        # demographic conflict warnings (one shared record per distinct
+        # Patient ID string), because the identity attributes of
+        # anonymized data carry no identity semantics.
+        # anonymous_patient_ids: [ANONYMOUS]
       FileStorage:
         on: true
         storage_dir: /var/lib/tiny_pacs/storage
