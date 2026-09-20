@@ -137,6 +137,12 @@ A complete example
       FileStorage:
         on: true
         storage_dir: /var/lib/tiny_pacs/storage
+        # Optional (shared by every storage component): when a C-STORE
+        # arrives for an instance that is already stored, refuse it with a
+        # failure status (default) or replace the stored instance. A
+        # replacement keeps the stored copy until the new one is fully
+        # stored, and a failed replacement rolls back to it.
+        # overwrite: false
 
 The PostgreSQL driver takes connection parameters instead:
 

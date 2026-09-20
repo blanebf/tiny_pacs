@@ -429,8 +429,19 @@ def dump_yaml(conf: Config) -> str:
     :return: YAML representation of the configuration
     :rtype: str
     """
+    data = conf.model_dump()
+    # ``components`` is declared as a mapping onto the ComponentConfig base,
+    # so Config.model_dump() serializes every entry against the base schema
+    # and silently drops subclass fields (e.g. FileStorage ``storage_dir``
+    # or ``overwrite``); dump each component with its actual model instead.
+    # JSON mode keeps enums (e.g. the database ``driver``) representable by
+    # yaml.safe_dump and re-validates into the same values on load.
+    data['components'] = {
+        name: component_config.model_dump(mode='json')
+        for name, component_config in conf.components.items()
+    }
     text: str = yaml.safe_dump(
-        conf.model_dump(), sort_keys=False, default_flow_style=False
+        data, sort_keys=False, default_flow_style=False
     )
     return text
 

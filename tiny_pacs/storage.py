@@ -3,26 +3,110 @@
 Module provides various implementation of storage components.
 """
 import datetime
+import enum
 import io
 import os
 import pathlib
 import shutil
 import tempfile
+import threading
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any, BinaryIO, cast
+from dataclasses import dataclass
+from typing import Any, BinaryIO, TypeVar, cast
 
 import peewee
 import pydicom
 import trolleybus
 from pydicom import uid
-from pynetdicom2 import applicationentity
+from pynetdicom2 import applicationentity, statuses
 
 from . import component, events, questions, schema
-from .component import TConfig
 
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+class StorageConfig(component.ComponentConfig):
+    """Configuration common to every storage component.
+
+    :ivar overwrite: when true an incoming C-STORE whose SOP Instance UID is
+                     already stored replaces the existing instance; when false
+                     (the default) such a store is refused with a failure
+                     status and the already-stored instance is left untouched.
+                     A replacement is only destructive once it succeeded: the
+                     stored copy is kept until the incoming dataset is fully
+                     stored, and a failed replacement rolls the record back to
+                     it. Overwriting replaces the stored dataset and its
+                     storage record only; the PACS catalogue keeps the
+                     attributes it recorded on the first store of that SOP
+                     Instance UID (the archive is keyed by UID, which is
+                     unchanged by an overwrite), so this is intended for
+                     re-pushing the same instance rather than editing its
+                     indexed attributes.
+    """
+
+    overwrite: bool = False
+
+
+TStorageConfig = TypeVar('TStorageConfig', bound=StorageConfig)
+
+
+class _DuplicateAction(enum.Enum):
+    """What to do with an incoming store of an already-known instance."""
+
+    #: Not stored yet: proceed normally
+    NEW = 'new'
+
+    #: Stored and ``overwrite`` is on: store the new copy, then swap the
+    #: record onto it (the stored copy is only removed once the replacement
+    #: is durable)
+    OVERWRITE = 'overwrite'
+
+    #: Stored and ``overwrite`` is off: refuse the store
+    REJECT = 'reject'
+
+
+@dataclass(frozen=True)
+class _OverwriteSnapshot:
+    """Record state saved while an overwrite is in flight.
+
+    Lets :meth:`StorageBase.file_stored` remove the replaced copy once the
+    new one is durable and :meth:`StorageBase.rollback_overwrite` restore it
+    when the replacement fails.
+
+    :ivar file_name: physical file name of the replaced (old) copy
+    :ivar transfer_syntax: transfer syntax recorded for the old copy
+    :ivar is_stored: stored flag of the old copy
+    :ivar added: recorded add time of the old copy
+    """
+
+    file_name: str
+    transfer_syntax: str
+    is_stored: bool
+    added: datetime.datetime
+
+
+#: C-STORE-RSP status returned when a duplicate store is refused because
+#: ``overwrite`` is disabled. There is no dedicated "already exists" status in
+#: PS3.4, so the generic "Refused: Out of Resources" failure is used; the peer
+#: learns the instance was not (re)stored.
+DUPLICATE_REJECTED_STATUS = statuses.C_STORE_OUT_OF_RESOURCES
+
+
+class _RejectedStore(io.BytesIO):
+    """Discard buffer returned when a C-STORE is refused.
+
+    ``get_file`` must always hand the DIMSE decoder a writable stream, even
+    when the store is refused; raising from there would abort the association
+    instead of answering with a C-STORE-RSP. The decoder writes the incoming
+    dataset into this throwaway buffer and the flag below lets the storage's
+    :class:`~tiny_pacs.events.Store` handler surface
+    :data:`DUPLICATE_REJECTED_STATUS` back to the AE.
+    """
+
+    #: Marker read by :meth:`StorageBase.on_store`
+    store_rejected = True
 
 
 class StorageFiles(peewee.Model):
@@ -68,7 +152,7 @@ _ORPHAN_GRACE = datetime.timedelta(minutes=5)
 _DELETE_CHUNK = 500
 
 
-class StorageBase(component.Component[TConfig]):
+class StorageBase(component.Component[TStorageConfig]):
     """Abstract storage component.
 
     Provides basic storage functionality, common for all storage components.
@@ -81,7 +165,7 @@ class StorageBase(component.Component[TConfig]):
     def __init__(
             self,
             bus: trolleybus.EventBus,
-            config: TConfig | dict[str, Any]
+            config: TStorageConfig | dict[str, Any]
     ) -> None:
         """Component initialization.
 
@@ -90,10 +174,17 @@ class StorageBase(component.Component[TConfig]):
         :param bus: event bus
         :type bus: trolleybus.EventBus
         :param config: component configuration
-        :type config: TConfig or dict
+        :type config: TStorageConfig or dict
         """
         super().__init__(bus, config)
 
+        #: In-flight overwrites by SOP Instance UID: snapshot of the record
+        #: state the replaced (old) copy must be restored to when the
+        #: replacement store fails, and removed once it succeeds.
+        self._pending_overwrite: dict[str, _OverwriteSnapshot] = {}
+        self._overwrite_lock = threading.Lock()
+
+        self.subscribe(events.Store, self.on_store)
         self.subscribe(events.GetFile, self.on_get_file)
         self.subscribe(events.StoreDone, self.on_store_done)
         self.subscribe(events.StoreFailure, self.on_store_failure)
@@ -120,6 +211,249 @@ class StorageBase(component.Component[TConfig]):
         :return: transaction context manager
         """
         return self.send_one(events.Atomic, None)
+
+    def on_store(self, payload: events.StorePayload) -> statuses.Status:
+        """Handles `Store` event: surfaces a refused-store decision.
+
+        A duplicate C-STORE that has been refused (because ``overwrite`` is
+        off) reaches the DIMSE decoder as a :class:`_RejectedStore` buffer;
+        the flag on it is translated here into the refusal status so the peer
+        receives a proper C-STORE-RSP instead of the association aborting.
+
+        :param payload: presentation context, dataset and association context
+        :type payload: events.StorePayload
+        :return: refusal status for a rejected store, success otherwise
+        :rtype: statuses.Status
+        """
+        if getattr(payload.ds, 'store_rejected', False):
+            return DUPLICATE_REJECTED_STATUS
+        return statuses.SUCCESS
+
+    def existing_file(self, sop_instance_uid: str) -> StorageFiles | None:
+        """Returns the record of an already-stored instance, if any.
+
+        :param sop_instance_uid: SOP Instance UID to look up
+        :type sop_instance_uid: str
+        :return: the existing record or None
+        :rtype: StorageFiles or None
+        """
+        return StorageFiles.get_or_none(
+            StorageFiles.sop_instance_uid == sop_instance_uid
+        )
+
+    def check_duplicate(self, sop_instance_uid: str) -> _DuplicateAction:
+        """Decides how to treat a store of an already-known instance.
+
+        When the instance is unknown the store proceeds. When it exists and
+        ``overwrite`` is enabled the caller must swap the record onto the new
+        copy with :meth:`replace_file` (the stored copy itself is only
+        removed once the replacement is durable). Otherwise the store is
+        refused.
+
+        :param sop_instance_uid: SOP Instance UID of the incoming dataset
+        :type sop_instance_uid: str
+        :return: the action the caller must take
+        :rtype: _DuplicateAction
+        """
+        existing = self.existing_file(sop_instance_uid)
+        if existing is None:
+            return _DuplicateAction.NEW
+        if self.config.overwrite:
+            self.log_info(
+                'Overwriting existing instance, SOP Instance UID: %s',
+                sop_instance_uid
+            )
+            return _DuplicateAction.OVERWRITE
+        self.log_warning(
+            'Instance already stored and overwrite is disabled, refusing '
+            'C-STORE, SOP Instance UID: %s', sop_instance_uid
+        )
+        return _DuplicateAction.REJECT
+
+    def record_store(
+            self,
+            action: _DuplicateAction,
+            sop_instance_uid: str,
+            sop_class_uid: str,
+            transfer_syntax: str | uid.UID,
+            file_name: str
+    ) -> StorageFiles:
+        """Creates or swaps the storage record for an incoming dataset.
+
+        Must be called with the action decided by :meth:`check_duplicate`;
+        the record write is the only step that can lose a creation race
+        against a parallel store of the same SOP Instance UID, which surfaces
+        as a :class:`peewee.DatabaseError` the caller must translate into a
+        refusal instead of letting it escape into the DIMSE decoder (an
+        exception there aborts the association).
+
+        :param action: the duplicate action for this store
+        :type action: _DuplicateAction
+        :param sop_instance_uid: SOP Instance UID of the dataset
+        :type sop_instance_uid: str
+        :param sop_class_uid: SOP Class UID of the dataset
+        :type sop_class_uid: str
+        :param transfer_syntax: original Transfer Syntax UID of the dataset
+        :type transfer_syntax: str or uid.UID
+        :param file_name: file name of the new copy in the storage
+        :type file_name: str
+        :return: the created or updated record
+        :rtype: StorageFiles
+        :raises peewee.DatabaseError: on a lost race or a vanished record
+        """
+        if action is _DuplicateAction.OVERWRITE:
+            return self.replace_file(
+                sop_instance_uid, sop_class_uid, transfer_syntax, file_name
+            )
+        return self.new_file(
+            sop_instance_uid, sop_class_uid, transfer_syntax, file_name
+        )
+
+    def replace_file(
+            self,
+            sop_instance_uid: str,
+            sop_class_uid: str,
+            transfer_syntax: str | uid.UID,
+            file_name: str
+    ) -> StorageFiles:
+        """Swaps an existing record onto the new copy of an overwrite.
+
+        The old record state is snapshotted so :meth:`file_stored` can remove
+        the replaced copy once the new one is durable and
+        :meth:`rollback_overwrite` can restore it when the replacement
+        fails; until then the stored copy is never touched.
+
+        :param sop_instance_uid: SOP Instance UID of the dataset
+        :type sop_instance_uid: str
+        :param sop_class_uid: SOP Class UID of the dataset
+        :type sop_class_uid: str
+        :param transfer_syntax: original Transfer Syntax UID of the dataset
+        :type transfer_syntax: str or uid.UID
+        :param file_name: file name of the new copy in the storage
+        :type file_name: str
+        :return: the updated record
+        :rtype: StorageFiles
+        """
+        with self.atomic():
+            record = StorageFiles.get(
+                StorageFiles.sop_instance_uid == sop_instance_uid
+            )
+            snapshot = _OverwriteSnapshot(
+                file_name=record.file_name,
+                transfer_syntax=record.transfer_syntax,
+                is_stored=record.is_stored,
+                added=record.added
+            )
+            record.sop_class_uid = sop_class_uid
+            record.transfer_syntax = transfer_syntax
+            record.file_name = file_name
+            record.added = _utcnow()
+            record.is_stored = False
+            record.save()
+        with self._overwrite_lock:
+            self._pending_overwrite[sop_instance_uid] = snapshot
+        self.log_info(
+            'Replacing stored file '
+            'SOP Instance UID: %(sop_instance_uid)s '
+            'SOP Class UID: %(sop_class_uid)s '
+            'Transfer Syntax UID: %(transfer_syntax)s '
+            'File Name: %(file_name)s ',
+            {
+                'sop_instance_uid': sop_instance_uid,
+                'sop_class_uid': sop_class_uid,
+                'transfer_syntax': transfer_syntax,
+                'file_name': file_name
+            }
+        )
+        return record
+
+    def _take_pending(self, sop_instance_uid: str
+                      ) -> _OverwriteSnapshot | None:
+        """Removes and returns the in-flight overwrite snapshot, if any."""
+        with self._overwrite_lock:
+            return self._pending_overwrite.pop(sop_instance_uid, None)
+
+    def rollback_overwrite(
+            self,
+            sop_instance_uid: str
+    ) -> tuple[_OverwriteSnapshot, str] | None:
+        """Restores the record of a failed in-flight overwrite.
+
+        The replaced (old) copy was never removed, so restoring the record
+        fields makes the stored instance whole again.
+
+        :param sop_instance_uid: SOP Instance UID of the failed store
+        :type sop_instance_uid: str
+        :return: the restored snapshot and the file name of the incomplete
+                 new copy (for physical removal by the caller), or None when
+                 no overwrite was in flight
+        :rtype: tuple[_OverwriteSnapshot, str] or None
+        """
+        snapshot = self._take_pending(sop_instance_uid)
+        if snapshot is None:
+            return None
+        partial_file_name = ''
+        with self.atomic():
+            record = StorageFiles.get_or_none(
+                StorageFiles.sop_instance_uid == sop_instance_uid
+            )
+            if record is not None:
+                partial_file_name = record.file_name
+                record.file_name = snapshot.file_name
+                record.transfer_syntax = snapshot.transfer_syntax
+                record.is_stored = snapshot.is_stored
+                record.added = snapshot.added
+                record.save()
+        self.log_info(
+            'Rolled back failed overwrite, SOP Instance UID: %s',
+            sop_instance_uid
+        )
+        return snapshot, partial_file_name
+
+    def finish_overwrite(self, snapshot: _OverwriteSnapshot) -> None:
+        """Removes the replaced copy after a successful overwrite.
+
+        :param snapshot: state of the record before the overwrite
+        :type snapshot: _OverwriteSnapshot
+        """
+        self.remove_physical(snapshot.file_name)
+
+    def discard_replacement(self, file_name: str) -> None:
+        """Removes the incomplete new copy of a failed overwrite.
+
+        :param file_name: file name of the new copy in the storage
+        :type file_name: str
+        """
+        self.remove_physical(file_name)
+
+    def remove_physical(self, file_name: str) -> None:
+        """Removes the physical storage of ``file_name``.
+
+        File-backed components delete the file on disk; the base is a no-op
+        for components without a durable physical medium.
+
+        :param file_name: file name as recorded on the storage record
+        :type file_name: str
+        """
+
+    def reject_buffer(
+            self,
+            command_set: pydicom.Dataset,
+            transfer_syntax: uid.UID
+    ) -> tuple[BinaryIO, int]:
+        """Builds the throwaway stream for a refused C-STORE.
+
+        :param command_set: command dataset of the received message
+        :type command_set: pydicom.Dataset
+        :param transfer_syntax: negotiated transfer syntax
+        :type transfer_syntax: uid.UID
+        :return: the flagged discard buffer and its dataset start position
+        :rtype: tuple[BinaryIO, int]
+        """
+        fp = _RejectedStore()
+        start = fp.tell()
+        applicationentity.write_meta(fp, command_set, transfer_syntax)
+        return fp, start
 
     def on_get_file(
             self,
@@ -211,6 +545,9 @@ class StorageBase(component.Component[TConfig]):
     def file_stored(self, sop_instance_uid: str) -> None:
         """Set file with specific SOP Instance UID as successfully stored
 
+        When this completes an in-flight overwrite, the replaced (old) copy
+        is removed here — only once the new copy is durable.
+
         :param sop_instance_uid: file SOP Instance UID
         :type sop_instance_uid: str
         """
@@ -222,6 +559,9 @@ class StorageBase(component.Component[TConfig]):
             stored_file.save()
         self.log_info('Successfully stored file in DB, SOP Instance UID: %s',
                       sop_instance_uid)
+        snapshot = self._take_pending(sop_instance_uid)
+        if snapshot is not None:
+            self.finish_overwrite(snapshot)
 
     def remove_file(self, sop_instance_uid: str) -> str:
         """Remove file record from database with specific SOP Instance UID
@@ -717,11 +1057,13 @@ class StorageBase(component.Component[TConfig]):
                 continue
 
 
-class FileStorageConfig(component.ComponentConfig):
+class FileStorageConfig(StorageConfig):
     """Configuration of the :class:`FileStorage` component.
 
     :ivar storage_dir: directory for stored files; a temporary directory is
                        created and removed on shutdown when not provided
+    :ivar overwrite: inherited from :class:`StorageConfig`; replace instances
+                     that are already stored instead of refusing the store
     """
 
     storage_dir: str | None = None
@@ -777,6 +1119,10 @@ class FileStorage(StorageBase[FileStorageConfig],
             questions.Question(
                 'storage_dir', 'Enter storage directory',
                 lambda v: v, default=None, default_repr='Temp dir'
+            ),
+            questions.Question(
+                'overwrite', 'Overwrite instances that are already stored?',
+                lambda v: v.lower() == 'y', default='N'
             )
         ])
 
@@ -792,6 +1138,15 @@ class FileStorage(StorageBase[FileStorageConfig],
                     payload: events.GetFilePayload) -> tuple[BinaryIO, int]:
         """Handles `GetFile` event: creates a new file in the storage.
 
+        When the SOP Instance is already stored the ``overwrite`` setting
+        decides between replacing it and refusing the store; a refusal hands
+        the decoder a throwaway :class:`_RejectedStore` buffer (no file is
+        created) that the :meth:`StorageBase.on_store` handler turns into a
+        failure C-STORE-RSP. Losing the record-creation race against a
+        parallel store of the same instance is refused the same way instead
+        of raising into the DIMSE decoder (which would abort the
+        association).
+
         :param payload: presentation context and command Dataset
         :type payload: events.GetFilePayload
         :return: file object and the dataset stream start position
@@ -802,24 +1157,38 @@ class FileStorage(StorageBase[FileStorageConfig],
         sop_class_uid = command_set.AffectedSOPClassUID
         ts = uid.UID(payload.transfer_syntax
                      or payload.context.supported_ts)
+        action = self.check_duplicate(sop_instance_uid)
+        if action is _DuplicateAction.REJECT:
+            return self.reject_buffer(command_set, ts)
         folder = pathlib.Path(self.get_folder_path())
         folder.mkdir(parents=True, exist_ok=True)
         # Unique file name and file creation (preamble and file meta
-        # information) come from FolderStorageMixin.
+        # information) come from FolderStorageMixin; on overwrite the still
+        # existing old copy is simply bypassed by the unique naming and only
+        # removed once the replacement is durable.
         ds, start = self.get_storage_file(payload.context, command_set, folder)
         full_name = cast(io.BufferedRandom, ds).name
         file_name = os.path.relpath(full_name, self.storage_dir)
         self.log_info('Storing incoming dataset in %s', file_name)
-        self.new_file(sop_instance_uid, sop_class_uid, ts, file_name)
+        try:
+            self.record_store(action, sop_instance_uid, sop_class_uid, ts,
+                              file_name)
+        except peewee.DatabaseError as error:
+            self.log_warning(
+                'Refusing C-STORE, SOP Instance UID %s was stored in '
+                'parallel: %s', sop_instance_uid, error
+            )
+            ds.close()
+            self.remove_physical(file_name)
+            return self.reject_buffer(command_set, ts)
         return ds, start
 
-    def on_store_done(self, ds: pydicom.Dataset) -> None:
-        """Handles `StoreDone` event: marks the file as stored."""
-        self.file_stored(ds.SOPInstanceUID)
+    def remove_physical(self, file_name: str) -> None:
+        """Removes a stored file from disk.
 
-    def on_store_failure(self, ds: pydicom.Dataset) -> None:
-        """Handles `StoreFailure` event: removes the file."""
-        file_name = self.remove_file(ds.SOPInstanceUID)
+        :param file_name: file name as recorded on the storage record
+        :type file_name: str
+        """
         full_name = self._contained(file_name)
         if full_name is None:
             self.log_error(
@@ -828,6 +1197,25 @@ class FileStorage(StorageBase[FileStorageConfig],
             )
             return
         self.remove_nothrow(full_name)
+
+    def on_store_done(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreDone` event: marks the file as stored."""
+        self.file_stored(ds.SOPInstanceUID)
+
+    def on_store_failure(self, ds: pydicom.Dataset) -> None:
+        """Handles `StoreFailure` event: removes the file.
+
+        A failure during an in-flight overwrite rolls the record back to the
+        stored copy (which was never removed) and only deletes the incomplete
+        new file.
+        """
+        rolled_back = self.rollback_overwrite(ds.SOPInstanceUID)
+        if rolled_back is not None:
+            _, partial_file_name = rolled_back
+            if partial_file_name:
+                self.discard_replacement(partial_file_name)
+            return
+        self.remove_physical(self.remove_file(ds.SOPInstanceUID))
 
     def on_store_get_files(
             self,
@@ -875,23 +1263,25 @@ class FileStorage(StorageBase[FileStorageConfig],
             )
 
 
-class InMemoryStorage(StorageBase[component.ComponentConfig]):
+class InMemoryStorage(StorageBase[StorageConfig]):
     """Simple in-memory storage component.
 
     Stores all incoming datasets in RAM. Intended for testing only.
     """
 
+    config_model = StorageConfig
+
     def __init__(
             self,
             bus: trolleybus.EventBus,
-            config: component.ComponentConfig | dict[str, Any]
+            config: StorageConfig | dict[str, Any]
     ) -> None:
         """Component initialization.
 
         :param bus: event bus
         :type bus: trolleybus.EventBus
         :param config: component configuration
-        :type config: ComponentConfig or dict
+        :type config: StorageConfig or dict
         """
         super().__init__(bus, config)
         self._temp_files: dict[str, tuple[BinaryIO, int]] = {}
@@ -903,6 +1293,9 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
     ) -> tuple[BinaryIO, int]:
         """Handles `GetFile` event: stores the dataset in memory.
 
+        A duplicate store is replaced when ``overwrite`` is on, otherwise it
+        is refused through a :class:`_RejectedStore` buffer.
+
         :param payload: presentation context and command Dataset
         :type payload: events.GetFilePayload
         :return: file object and the dataset stream start position
@@ -913,13 +1306,54 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         sop_class_uid = command_set.AffectedSOPClassUID
         ts = uid.UID(payload.transfer_syntax
                      or payload.context.supported_ts)
+        action = self.check_duplicate(sop_instance_uid)
+        if action is _DuplicateAction.REJECT:
+            return self.reject_buffer(command_set, ts)
         fp = io.BytesIO()
         start = fp.tell()
         applicationentity.write_meta(fp, command_set, ts)
-        self.new_file(sop_instance_uid, sop_class_uid, ts, sop_instance_uid)
+        try:
+            self.record_store(action, sop_instance_uid, sop_class_uid, ts,
+                              sop_instance_uid)
+        except peewee.DatabaseError as error:
+            self.log_warning(
+                'Refusing C-STORE, SOP Instance UID %s was stored in '
+                'parallel: %s', sop_instance_uid, error
+            )
+            return self.reject_buffer(command_set, ts)
         self._temp_files[sop_instance_uid] = (fp, start)
         self.log_info('Storing dataset in memory: %s', sop_instance_uid)
         return fp, start
+
+    def finish_overwrite(self, snapshot: _OverwriteSnapshot) -> None:
+        """No-op: ``on_store_done`` replaces the in-memory dataset in place.
+
+        :param snapshot: state of the record before the overwrite
+        :type snapshot: _OverwriteSnapshot
+        """
+
+    def discard_replacement(self, file_name: str) -> None:
+        """Drops the incomplete in-memory buffer of a failed overwrite.
+
+        The stored dataset itself is untouched, so a rollback cannot lose
+        it; only the pending temporary buffer (keyed by SOP Instance UID)
+        is dropped.
+
+        :param file_name: SOP Instance UID key of the buffer
+        :type file_name: str
+        """
+        self._temp_files.pop(file_name, None)
+
+    def remove_physical(self, file_name: str) -> None:
+        """Drops the in-memory dataset.
+
+        In this component the recorded ``file_name`` is the SOP Instance UID.
+
+        :param file_name: SOP Instance UID key of the stored dataset
+        :type file_name: str
+        """
+        self._stored_files.pop(file_name, None)
+        self._temp_files.pop(file_name, None)
 
     def on_store_done(self, ds: pydicom.Dataset) -> None:
         """Handles `StoreDone` event: reads the dataset into memory."""
@@ -931,7 +1365,17 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
         del self._temp_files[sop_instance_uid]
 
     def on_store_failure(self, ds: pydicom.Dataset) -> None:
-        """Handles `StoreFailure` event: drops the in-memory dataset."""
+        """Handles `StoreFailure` event: drops the in-memory dataset.
+
+        A failure during an in-flight overwrite rolls the record back to the
+        stored copy and only drops the incomplete buffer.
+        """
+        rolled_back = self.rollback_overwrite(ds.SOPInstanceUID)
+        if rolled_back is not None:
+            _, partial_file_name = rolled_back
+            if partial_file_name:
+                self.discard_replacement(partial_file_name)
+            return
         file_name = self.remove_file(ds.SOPInstanceUID)
         try:
             del self._temp_files[file_name]
@@ -955,23 +1399,26 @@ class InMemoryStorage(StorageBase[component.ComponentConfig]):
             yield file_record.sop_class_uid, file_record.transfer_syntax, ds
 
 
-class TempFileStorage(StorageBase[component.ComponentConfig]):
+class TempFileStorage(StorageBase[StorageConfig]):
     """Simple storage component that uses temporary files to store incoming
     dataset.
 
     Intended for testing only.
     """
+
+    config_model = StorageConfig
+
     def __init__(
             self,
             bus: trolleybus.EventBus,
-            config: component.ComponentConfig | dict[str, Any]
+            config: StorageConfig | dict[str, Any]
     ) -> None:
         """Component initialization.
 
         :param bus: event bus
         :type bus: trolleybus.EventBus
         :param config: component configuration
-        :type config: ComponentConfig or dict
+        :type config: StorageConfig or dict
         """
         super().__init__(bus, config)
         self._temp_files: set[str] = set()
@@ -981,6 +1428,9 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
             payload: events.GetFilePayload
     ) -> tuple[BinaryIO, int]:
         """Handles `GetFile` event: creates a new temporary file.
+
+        A duplicate store is replaced when ``overwrite`` is on, otherwise it
+        is refused through a :class:`_RejectedStore` buffer.
 
         :param payload: presentation context and command Dataset
         :type payload: events.GetFilePayload
@@ -992,23 +1442,54 @@ class TempFileStorage(StorageBase[component.ComponentConfig]):
         sop_class_uid = command_set.AffectedSOPClassUID
         ts = uid.UID(payload.transfer_syntax
                      or payload.context.supported_ts)
+        action = self.check_duplicate(sop_instance_uid)
+        if action is _DuplicateAction.REJECT:
+            return self.reject_buffer(command_set, ts)
         fp = cast(BinaryIO, tempfile.NamedTemporaryFile(delete=False))
         start = fp.tell()
         applicationentity.write_meta(fp, command_set, ts)
-        self.new_file(sop_instance_uid, sop_class_uid, ts, fp.name)
+        try:
+            self.record_store(action, sop_instance_uid, sop_class_uid, ts,
+                              fp.name)
+        except peewee.DatabaseError as error:
+            self.log_warning(
+                'Refusing C-STORE, SOP Instance UID %s was stored in '
+                'parallel: %s', sop_instance_uid, error
+            )
+            fp.close()
+            self.remove_nothrow(fp.name)
+            return self.reject_buffer(command_set, ts)
         self._temp_files.add(fp.name)
         self.log_info('Storing incoming dataset in %s', fp.name)
         return fp, start
+
+    def remove_physical(self, file_name: str) -> None:
+        """Removes a temporary file.
+
+        :param file_name: temporary file name
+        :type file_name: str
+        """
+        self.remove_nothrow(file_name)
+        self._temp_files.discard(file_name)
 
     def on_store_done(self, ds: pydicom.Dataset) -> None:
         """Handles `StoreDone` event: marks the file as stored."""
         self.file_stored(ds.SOPInstanceUID)
 
     def on_store_failure(self, ds: pydicom.Dataset) -> None:
-        """Handles `StoreFailure` event: removes the temporary file."""
-        file_name = self.remove_file(ds.SOPInstanceUID)
-        self.remove_nothrow(file_name)
-        self._temp_files.remove(file_name)
+        """Handles `StoreFailure` event: removes the temporary file.
+
+        A failure during an in-flight overwrite rolls the record back to the
+        stored copy (which was never removed) and only deletes the incomplete
+        new file.
+        """
+        rolled_back = self.rollback_overwrite(ds.SOPInstanceUID)
+        if rolled_back is not None:
+            _, partial_file_name = rolled_back
+            if partial_file_name:
+                self.discard_replacement(partial_file_name)
+            return
+        self.remove_physical(self.remove_file(ds.SOPInstanceUID))
 
     def on_store_get_files(
             self,

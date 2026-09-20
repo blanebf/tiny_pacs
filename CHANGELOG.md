@@ -244,6 +244,28 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
 - Database inspection events: `events.SchemaVersions` and
   `events.TableCounts`, answered by the `Database` component — the
   admin `db info` command no longer queries core tables directly.
+- Storage `overwrite` option (shared by `FileStorage`,
+  `InMemoryStorage` and `TempFileStorage` via `StorageConfig`,
+  default `false`): a C-STORE for an instance that is already stored is
+  refused with a failure C-STORE-RSP (`0xA700`) instead of overwriting
+  it, and can be opted into replacing the stored instance. An
+  overwrite is only destructive once it succeeded: the record is
+  swapped onto the incoming copy while the stored one is kept, the
+  replaced copy is removed on `StoreDone` and a failed replacement
+  rolls the record back to it. Fix: such a duplicate store no longer
+  aborts the association — the unique `sop_instance_uid` violation
+  used to escape `get_file` on the DUL thread, where pynetdicom2 turns
+  any exception into an A-ABORT. The storage components now resolve
+  the duplicate inside `GetFile` (refuse through a discard buffer
+  surfaced by the `Store` handler, or swap the record when `overwrite`
+  is on), and a lost creation race against a parallel store of the
+  same instance is likewise answered with the refusal status instead
+  of raising.
+- Fix: `config.dump_yaml` serialized the component entries against the
+  `ComponentConfig` base schema, silently dropping every
+  component-specific field (`FileStorage.storage_dir`, the new
+  `overwrite`, `Database.driver`, …) from generated and saved
+  configurations; each component is now dumped with its actual model.
 - Fix: pooled DB connections no longer leak from worker threads
   (`playhouse.pool.MaxConnectionsExceeded` after a handful of incoming
   associations and web requests). peewee tracks connections per thread

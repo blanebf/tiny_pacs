@@ -8,7 +8,7 @@ import trolleybus
 from pydicom import uid
 from pynetdicom2 import applicationentity, fsm, sopclass, statuses, uids
 
-from tiny_pacs import client, config, devices, events, server
+from tiny_pacs import client, config, devices, events, server, storage
 
 
 @pytest.fixture
@@ -100,6 +100,62 @@ def test_storage(pacs: server.Server, pacs_client: client.DICOMClient,
                  test_ds: pydicom.Dataset) -> None:
     pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
                       uid.ImplicitVRLittleEndian)
+
+
+def test_duplicate_store_refused(pacs: server.Server,
+                                 pacs_client: client.DICOMClient,
+                                 test_ds: pydicom.Dataset) -> None:
+    """Re-storing an existing instance must fail cleanly, not abort.
+
+    With ``overwrite`` off (the default) a duplicate C-STORE is answered
+    with a failure status instead of tearing down the association.
+    """
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+    with pytest.raises(client.CStoreError) as exc:
+        pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                          uid.ImplicitVRLittleEndian)
+    assert int(exc.value.status) == int(storage.DUPLICATE_REJECTED_STATUS)
+    # The association was not aborted: a follow-up store of a *new* instance
+    # on a fresh association still succeeds.
+    other = test_ds.copy()
+    other.SOPInstanceUID = uid.generate_uid()
+    pacs_client.store(other, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+
+
+@pytest.fixture
+def overwrite_pacs() -> Iterator[server.Server]:
+    """Server whose storage allows overwriting already-stored instances."""
+    conf = config.Config()
+    conf.update_config({
+        'ae': {'port': 0},
+        'components': {
+            'Database': {'on': True, 'db_name': str(uuid.uuid4())},
+            'InMemoryStorage': {'on': True, 'overwrite': True}
+        }
+    })
+    _pacs = server.Server(conf)
+    _pacs.start()
+    yield _pacs
+    _pacs.exit()
+
+
+def test_duplicate_store_overwrite(overwrite_pacs: server.Server,
+                                   test_ds: pydicom.Dataset) -> None:
+    """With ``overwrite`` on a duplicate C-STORE succeeds and stays unique."""
+    pacs_client = _client_for(overwrite_pacs)
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+    find_request = pydicom.Dataset()
+    find_request.QueryRetrieveLevel = 'IMAGE'
+    find_request.StudyInstanceUID = None
+    find_request.SeriesInstanceUID = None
+    find_request.SOPInstanceUID = None
+    results = list(pacs_client.find(find_request))
+    assert len(results) == 1
 
 
 @pytest.fixture
