@@ -38,6 +38,7 @@ from .common import (
     JSON_CT,
     MAX_QUERY_LIMIT,
     MAX_QUERY_OFFSET,
+    AppState,
     abort,
     accepts_json,
     audit,
@@ -67,7 +68,7 @@ SIMPLE_PARAMS: dict[str, str] = {
 }
 
 
-def register(state: Any, app: Any) -> None:
+def register(state: AppState, app: Any) -> None:
     """Registers the QIDO-RS routes on one bottle app.
 
     :param state: shared application state
@@ -89,7 +90,7 @@ def register(state: Any, app: Any) -> None:
         )
 
 
-def query_level(state: Any, level: str, study_uid: str | None = None,
+def query_level(state: AppState, level: str, study_uid: str | None = None,
                 series_uid: str | None = None, sop_uid: str | None = None
                 ) -> Any:
     """Answers one QIDO-RS query.

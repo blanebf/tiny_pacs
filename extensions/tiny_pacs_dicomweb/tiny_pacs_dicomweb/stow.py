@@ -39,6 +39,7 @@ from tiny_pacs import events
 from .auth import environ_username
 from .common import (
     JSON_CT,
+    AppState,
     abort,
     accepts_json,
     audit,
@@ -91,7 +92,7 @@ DICM_MARKER = b'DICM'
 DICM_OFFSET = 128
 
 
-def register(state: Any, app: Any) -> None:
+def register(state: AppState, app: Any) -> None:
     """Registers the STOW-RS routes on one bottle app.
 
     :param state: shared application state
@@ -107,7 +108,7 @@ def register(state: Any, app: Any) -> None:
         return _store_request(state, study_uid)
 
 
-def _store_request(state: Any, study_uid: str | None) -> Any:
+def _store_request(state: AppState, study_uid: str | None) -> Any:
     """Answers one STOW-RS request.
 
     :param state: shared application state
@@ -191,7 +192,7 @@ def _study_of(successes: list[dict[str, Any]],
     return None
 
 
-def _read_body(state: Any) -> bytes:
+def _read_body(state: AppState) -> bytes:
     """Reads the request body within the configured size cap.
 
     :param state: shared application state
@@ -216,7 +217,7 @@ def _read_body(state: Any) -> bytes:
     return data
 
 
-def _parse_parts(state: Any, content_type: str, body: bytes
+def _parse_parts(state: AppState, content_type: str, body: bytes
                  ) -> tuple[list[Any], Any]:
     """Parses the ``multipart/related`` body into its DICOM parts.
 
@@ -280,7 +281,7 @@ def _container_type_parameter(content_type: str) -> str:
     return DICOM_PART_MEDIA_TYPE
 
 
-def _store_part(state: Any, part: Any, study_uid: str | None,
+def _store_part(state: AppState, part: Any, study_uid: str | None,
                 environment: dict[str, Any],
                 successes: list[dict[str, Any]],
                 failures: list[dict[str, Any]]) -> None:
@@ -495,7 +496,7 @@ def _elements_after_meta(payload: bytes) -> bytes:
     return payload[_scan_meta(payload)[1]:]
 
 
-def _materialize(state: Any, ds: pydicom.Dataset,
+def _materialize(state: AppState, ds: pydicom.Dataset,
                  transfer_syntax: uid.UID,
                  elements: bytes | memoryview) -> bool:
     """Persists one parsed dataset through the core store pipeline.

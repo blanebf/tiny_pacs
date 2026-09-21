@@ -40,6 +40,7 @@ from .common import (
     CHUNK_SIZE,
     JSON_CT,
     MAX_RETRIEVE_INSTANCES,
+    AppState,
     abort,
     require,
 )
@@ -65,7 +66,7 @@ RETRIEVE_PAGE = GETFILES_BATCH
 UID_PATTERN = re.compile(r'[0-2]((\.0)|(\.[1-9][0-9]*))*\Z')
 
 
-def register(state: Any, app: Any) -> None:
+def register(state: AppState, app: Any) -> None:
     """Registers the WADO-RS/WADO-URI routes on one bottle app.
 
     :param state: shared application state
@@ -94,7 +95,7 @@ def register(state: Any, app: Any) -> None:
                              series_uid=series_uid, sop_uid=sop_uid)
 
 
-def _object_route(state: Any, level: str, study_uid: str | None = None,
+def _object_route(state: AppState, level: str, study_uid: str | None = None,
                   series_uid: str | None = None,
                   sop_uid: str | None = None) -> Any:
     """Serves one object resource route with PS3.18 content negotiation.
@@ -240,7 +241,7 @@ def parse_accept(header: str) -> list[tuple[str, dict[str, str]]]:
 # Retrieval
 # -----------------------------------------------------------------------
 
-def _retrieve(state: Any, single: bool, study_uid: str | None,
+def _retrieve(state: AppState, single: bool, study_uid: str | None,
               series_uid: str | None, sop_uid: str | None,
               wanted_ts: set[str] | None) -> Any:
     """Resolves, fetches and streams one retrieval request.
@@ -285,7 +286,7 @@ def _retrieve(state: Any, single: bool, study_uid: str | None,
     )
 
 
-def _collect_stored(state: Any, uids: list[str]
+def _collect_stored(state: AppState, uids: list[str]
                     ) -> list[events.StoredFile]:
     """Fetches stored files from every storage component, in batches.
 
@@ -332,7 +333,7 @@ def _single_content_type(entry: events.StoredFile) -> str:
     return DICOM_CT
 
 
-def _resolve_instance_uids(state: Any, study_uid: str | None,
+def _resolve_instance_uids(state: AppState, study_uid: str | None,
                            series_uid: str | None,
                            sop_uid: str | None) -> list[str]:
     """Resolves the SOP Instance UIDs of one retrieval target.
@@ -355,18 +356,21 @@ def _resolve_instance_uids(state: Any, study_uid: str | None,
     offset = 0
     try:
         while offset < MAX_RETRIEVE_INSTANCES:
-            page = list(
-                state.bus.send_any(
-                    events.ArchiveInstanceQuery,
-                    events.ArchiveFilter(
-                        study_instance_uid=study_uid or None,
-                        series_instance_uid=series_uid or None,
-                        sop_instance_uid=sop_uid or None,
-                        limit=RETRIEVE_PAGE,
-                        offset=offset
-                    )
-                ) or []
+            # Bound through an annotated variable: inlining the call
+            # inside ``list(... or [])`` lets mypy solve the generic
+            # result type from the return context instead of the event,
+            # reporting a false invariant-mismatch on the event argument
+            answer: list[events.ArchiveItem] | None = state.bus.send_any(
+                events.ArchiveInstanceQuery,
+                events.ArchiveFilter(
+                    study_instance_uid=study_uid or None,
+                    series_instance_uid=series_uid or None,
+                    sop_instance_uid=sop_uid or None,
+                    limit=RETRIEVE_PAGE,
+                    offset=offset
+                )
             )
+            page = list(answer or [])
             for item in page:
                 sop = str(item.uids.get('sop_instance_uid') or '')
                 if sop and sop not in seen:
@@ -381,7 +385,7 @@ def _resolve_instance_uids(state: Any, study_uid: str | None,
         abort(500)
 
 
-def _multipart(state: Any, stored: list[events.StoredFile],
+def _multipart(state: AppState, stored: list[events.StoredFile],
                boundary: str) -> Generator[bytes, None, None]:
     """Streams a ``multipart/related`` retrieval response.
 
@@ -480,7 +484,7 @@ def _serialize_dataset(ds: pydicom.Dataset, sop_class: str | uid.UID,
 # WADO-URI
 # -----------------------------------------------------------------------
 
-def _wado_uri(state: Any) -> Any:
+def _wado_uri(state: AppState) -> Any:
     """Answers a WADO-URI request (``GET {prefix}/wado``).
 
     Supported parameter forms: ``requestType=WADO`` with ``studyUID``
