@@ -47,6 +47,7 @@ tiny-pacs-admin = { path = "extensions/tiny_pacs_admin", optional = true }
 tiny-pacs-identity = { path = "extensions/tiny_pacs_identity", optional = true }
 tiny-pacs-audit = { path = "extensions/tiny_pacs_audit", optional = true }
 tiny-pacs-admin-web = { path = "extensions/tiny_pacs_admin_web", optional = true }
+tiny-pacs-dicomweb = { path = "extensions/tiny_pacs_dicomweb", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"
@@ -66,8 +67,9 @@ sphinx-rtd-theme = "^3.0"
 # The shared HTTP server's waitress dependency (tiny_pacs[http]) and
 # convenience extras pulling the optional extension distributions in:
 # pip install tiny_pacs[admin], tiny_pacs[identity], tiny_pacs[audit],
-# tiny_pacs[web-admin] or tiny_pacs[admin,identity,audit,web-admin].
-# tiny_pacs[web-admin] implies the http extra (it carries waitress). In
+# tiny_pacs[web-admin], tiny_pacs[dicomweb] or any combination of them.
+# tiny_pacs[web-admin] and tiny_pacs[dicomweb] imply the http extra (it
+# carries waitress). In
 # the repository the extension extras resolve against the bundled
 # packages; scripts/prepare_publish.py turns the paths into version
 # constraints on the published distributions for PyPI builds.
@@ -76,6 +78,7 @@ admin = ["tiny-pacs-admin"]
 identity = ["tiny-pacs-identity"]
 audit = ["tiny-pacs-audit"]
 web-admin = ["tiny-pacs-admin-web", "waitress"]
+dicomweb = ["tiny-pacs-dicomweb", "waitress"]
 
 [tool.poetry.scripts]
 tiny-pacs = "tiny_pacs.__main__:main"
@@ -96,6 +99,16 @@ select = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The repository collects tests from multiple directories that share
+# basenames (tests/, extensions/*/tests/ each contain conftest.py,
+# test_e2e.py, ...). The default "prepend" import mode maps each file to
+# a top-level module by basename only, which collides and breaks VS Code
+# test discovery. importlib mode derives unique module names from paths.
+addopts = "--import-mode=importlib"
+# Treat parent directories of test packages as namespace packages so each
+# tests/ directory gets a fully-qualified, unique module name rooted at the
+# repository root (extensions/<name>/tests/...) instead of a bare "tests".
+consider_namespace_packages = true
 
 [tool.mypy]
 python_version = "3.10"

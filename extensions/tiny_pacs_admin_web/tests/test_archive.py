@@ -17,12 +17,13 @@ from urllib.parse import quote
 import pydicom
 import pytest
 import trolleybus
-from conftest import WSGIClient, add_user, grant
 from pydicom import uid
 from pynetdicom2 import uids
 from tiny_pacs import events as core_events
 
 from tiny_pacs_admin_web import web as web_module
+
+from .conftest import WSGIClient, add_user, grant
 
 # -----------------------------------------------------------------------
 # Helpers

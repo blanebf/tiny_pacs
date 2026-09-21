@@ -16,7 +16,6 @@ from typing import Any
 
 import pydicom
 import pytest
-from conftest import HttpClient, csrf_token
 from pydicom import uid
 from pynetdicom2 import uids
 from tiny_pacs import client as core_client
@@ -29,6 +28,8 @@ from tiny_pacs import server as core_server
 from tiny_pacs_admin_web import web as web_module
 from tiny_pacs_admin_web.component import AdminWeb
 from tiny_pacs_admin_web.models import WebGrantModel, _utcnow
+
+from .conftest import HttpClient, csrf_token
 
 MAIN_AET = 'TINY_PACS'
 

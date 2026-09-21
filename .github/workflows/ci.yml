@@ -68,6 +68,13 @@ jobs:
               extensions/tiny_pacs_admin
               extensions/tiny_pacs_identity
               extensions/tiny_pacs_admin_web
+          - name: tiny_pacs_dicomweb
+            install: >-
+              ".[http]"
+              extensions/tiny_pacs_admin
+              extensions/tiny_pacs_identity
+              extensions/tiny_pacs_audit
+              extensions/tiny_pacs_dicomweb
     steps:
       - uses: actions/checkout@v4
 
@@ -79,11 +86,12 @@ jobs:
 
       # The extension packages pin the core by version, so the repository
       # packages are installed from the checkout in dependency order. The
-      # identity job also installs the admin package, and the audit and
-      # admin-web jobs install both admin and identity: their test suites
-      # exercise the interaction with the real
-      # DeviceStore/Users/UserIdentityAuth components (test-only
-      # dependencies; the runtime packages import neither).
+      # identity job also installs the admin package, the audit and
+      # admin-web jobs install both admin and identity, and the DICOMweb
+      # job installs admin, identity and audit: their test suites exercise
+      # the interaction with the real DeviceStore/Users/UserIdentityAuth/
+      # AuditLog components (test-only dependencies; the runtime packages
+      # import neither).
       - name: Install core and extensions
         run: pip install ${{ matrix.package.install }}
 
@@ -127,6 +135,7 @@ jobs:
           extensions/tiny_pacs_identity
           extensions/tiny_pacs_audit
           extensions/tiny_pacs_admin_web
+          extensions/tiny_pacs_dicomweb
 
       - name: Verify entry point discovery
         run: python scripts/verify_entry_points.py

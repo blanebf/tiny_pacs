@@ -4,7 +4,6 @@ from typing import Any
 
 import pydantic
 import pytest
-from conftest import _identity_item, assoc_payload
 from pynetdicom2 import exceptions, pdu
 from pynetdicom2.userdataitems import (
     UserIdentityNegotiationSubItem,
@@ -21,6 +20,8 @@ from tiny_pacs_identity.auth import (
     UserIdentityAuthConfig,
 )
 from tiny_pacs_identity.models import UserModel
+
+from .conftest import _identity_item, assoc_payload
 
 
 def _add_user(bus: Any, username: str = 'alice',

@@ -23,12 +23,15 @@ CORE_PYPROJECT = (
     'optional = true }\n'
     'tiny-pacs-admin-web = { path = "extensions/tiny_pacs_admin_web", '
     'optional = true }\n'
+    'tiny-pacs-dicomweb = { path = "extensions/tiny_pacs_dicomweb", '
+    'optional = true }\n'
     '\n'
     '[tool.poetry.extras]\n'
     'admin = ["tiny-pacs-admin"]\n'
     'identity = ["tiny-pacs-identity"]\n'
     'audit = ["tiny-pacs-audit"]\n'
     'web-admin = ["tiny-pacs-admin-web"]\n'
+    'dicomweb = ["tiny-pacs-dicomweb"]\n'
 )
 
 
@@ -60,6 +63,7 @@ def prepare_tree(tmp_path: Path) -> ModuleType:
     make_extension(tmp_path, 'extensions/tiny_pacs_identity', '0.1.3')
     make_extension(tmp_path, 'extensions/tiny_pacs_audit', '0.1.0')
     make_extension(tmp_path, 'extensions/tiny_pacs_admin_web', '0.1.0')
+    make_extension(tmp_path, 'extensions/tiny_pacs_dicomweb', '0.1.0')
     return load_script('prepare_publish')
 
 
@@ -87,6 +91,7 @@ def test_prepare_publish_tracks_minor_series(tmp_path: Path) -> None:
     make_extension(tmp_path, 'extensions/tiny_pacs_identity', '0.3.0')
     make_extension(tmp_path, 'extensions/tiny_pacs_audit', '0.4.2')
     make_extension(tmp_path, 'extensions/tiny_pacs_admin_web', '0.1.0')
+    make_extension(tmp_path, 'extensions/tiny_pacs_dicomweb', '0.1.0')
     script = load_script('prepare_publish')
     script.rewrite(tmp_path)
     text = (tmp_path / 'pyproject.toml').read_text(encoding='utf-8')
@@ -145,6 +150,7 @@ def test_prepare_publish_reformatted_path_dependency(
     make_extension(tmp_path, 'extensions/tiny_pacs_identity', '0.1.0')
     make_extension(tmp_path, 'extensions/tiny_pacs_audit', '0.1.0')
     make_extension(tmp_path, 'extensions/tiny_pacs_admin_web', '0.1.0')
+    make_extension(tmp_path, 'extensions/tiny_pacs_dicomweb', '0.1.0')
     script = load_script('prepare_publish')
     with pytest.raises(SystemExit):
         script.rewrite(tmp_path)
@@ -162,7 +168,8 @@ def test_prepare_publish_rewrites_real_pyproject(tmp_path: Path) -> None:
     for directory in ('extensions/tiny_pacs_admin',
                       'extensions/tiny_pacs_identity',
                       'extensions/tiny_pacs_audit',
-                      'extensions/tiny_pacs_admin_web'):
+                      'extensions/tiny_pacs_admin_web',
+                      'extensions/tiny_pacs_dicomweb'):
         (tmp_path / directory).mkdir(parents=True)
         (tmp_path / directory / 'pyproject.toml').write_text(
             (REPO_ROOT / directory / 'pyproject.toml')
@@ -177,6 +184,7 @@ def test_prepare_publish_rewrites_real_pyproject(tmp_path: Path) -> None:
     assert 'identity = ["tiny-pacs-identity"]' in text
     assert 'audit = ["tiny-pacs-audit"]' in text
     assert 'web-admin = ["tiny-pacs-admin-web", "waitress"]' in text
+    assert 'dicomweb = ["tiny-pacs-dicomweb", "waitress"]' in text
     assert 'http = ["waitress"]' in text
 
 
@@ -185,6 +193,7 @@ def test_verify_entry_points_script() -> None:
     pytest.importorskip('tiny_pacs_identity')
     pytest.importorskip('tiny_pacs_audit')
     pytest.importorskip('tiny_pacs_admin_web')
+    pytest.importorskip('tiny_pacs_dicomweb')
     result = subprocess.run(
         [sys.executable,
          str(REPO_ROOT / 'scripts' / 'verify_entry_points.py')],

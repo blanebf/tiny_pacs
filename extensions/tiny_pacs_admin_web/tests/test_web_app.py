@@ -15,16 +15,17 @@ from typing import Any
 
 import pytest
 import trolleybus
-from conftest import (
+from tiny_pacs import events as core_events
+
+from tiny_pacs_admin_web.sessions import SessionStore
+
+from .conftest import (
     Response,
     WSGIClient,
     add_user,
     csrf_token,
     grant,
 )
-from tiny_pacs import events as core_events
-
-from tiny_pacs_admin_web.sessions import SessionStore
 
 # -----------------------------------------------------------------------
 # Helpers

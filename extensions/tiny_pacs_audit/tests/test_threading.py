@@ -14,11 +14,12 @@ from typing import Any
 
 import pydicom
 import pytest
-from conftest import association_context
 from pydicom import uid
 from tiny_pacs import events as core_events
 
 from tiny_pacs_audit.audit import AuditLog
+
+from .conftest import association_context
 
 
 def _ds() -> pydicom.Dataset:

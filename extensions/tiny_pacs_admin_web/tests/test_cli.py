@@ -12,13 +12,14 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from conftest import sqlite_config
 from tiny_pacs import __main__ as cli
 from tiny_pacs import db as core_db
 from tiny_pacs.admin import AdminError
 from tiny_pacs.http import HEADLESS_ENV
 
 from tiny_pacs_admin_web.models import WebGrantModel
+
+from .conftest import sqlite_config
 
 
 def _run(argv: list[str]) -> Any:

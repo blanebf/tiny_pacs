@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import seed_rows
 from tiny_pacs import __main__ as cli
+
+from .conftest import seed_rows
 
 
 def _run(argv: list[str]) -> Any:

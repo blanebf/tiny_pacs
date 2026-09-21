@@ -7,7 +7,6 @@ import peewee
 import pydantic
 import pydicom
 import pytest
-from conftest import _identity_item, assoc_payload, association_context
 from pydicom import uid
 from pynetdicom2 import fsm, statuses
 from tiny_pacs import assoc_context
@@ -15,6 +14,8 @@ from tiny_pacs import events as core_events
 
 from tiny_pacs_audit.audit import AuditLog, AuditLogConfig
 from tiny_pacs_audit.models import AuditEventModel
+
+from .conftest import _identity_item, assoc_payload, association_context
 
 _SOP_CLASS = '1.2.840.10008.5.1.4.1.1.7'
 
