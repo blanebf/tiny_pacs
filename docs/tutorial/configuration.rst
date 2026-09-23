@@ -226,6 +226,14 @@ configuration folder portable between POSIX systems and Windows, and
 every ``config --launcher`` run regenerates (overwrites) them together
 with the configuration.
 
+The folder configuration is appended *after* the forwarded arguments and
+the last ``-c`` occurrence wins, so a ``-c`` passed to a wrapper itself
+is superseded by the folder's configuration. Values interpolated into
+the scripts are validated: configuration names or interpreter paths
+containing characters that cannot be embedded safely (quotes, cmd.exe
+metacharacters, control characters) are refused with an error before
+anything is written.
+
 Interactive configuration
 -------------------------
 

@@ -78,7 +78,9 @@ def config_command(args: argparse.Namespace) -> None:
     ``generate --launcher`` additionally writes the launcher scripts (see
     :mod:`tiny_pacs.launcher`) next to the configuration, so the folder
     can run any tiny-pacs subcommand against it without activating an
-    environment.
+    environment. The folder configuration is appended after the
+    forwarded arguments and ``-c`` takes the last occurrence, so the
+    scripts supersede a ``-c`` of their own.
 
     :param args: parsed ``config`` command arguments
     """
@@ -93,6 +95,15 @@ def config_command(args: argparse.Namespace) -> None:
         else:
             sys.stdout.write(config.dump_yaml(conf))
         return
+    target = Path(args.output) if args.output else Path('config.yaml')
+    if args.launcher:
+        # Validate before anything is written, so an unusable output name
+        # neither leaves a partial folder nor a configuration without its
+        # launcher scripts
+        try:
+            launcher.validate_script_inputs(target.name, sys.executable)
+        except ValueError as exc:
+            fail(str(exc))
     conf = config.Config()
     for name, extension_conf in config.extension_component_defaults().items():
         conf.components.setdefault(name, extension_conf)
@@ -105,7 +116,6 @@ def config_command(args: argparse.Namespace) -> None:
     else:
         sys.stdout.write(config.dump_yaml(conf))
     if args.launcher:
-        target = Path(args.output) if args.output else Path('config.yaml')
         written = launcher.write_scripts(target.parent, target.name)
         # Without --output stdout carries the YAML itself and must stay
         # pipeable, so the note goes to stderr

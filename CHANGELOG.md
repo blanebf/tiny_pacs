@@ -72,14 +72,21 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   launcher scripts next to the configuration — `cli.sh` for POSIX shells
   and `cli.cmd` for Windows. Each script changes into the configuration
   folder (so relative DB/storage/log paths resolve next to it) and
-  forwards its arguments to tiny-pacs with `-c <config>` appended,
+  forwards its arguments to tiny-pacs with `-c <config>` appended (the
+  folder config wins over a `-c` passed to the script itself),
   preferring the generating interpreter (`sys.executable -m tiny_pacs`)
   and falling back to `tiny-pacs` on the `PATH`, so the folder runs any
   subcommand without activating an environment. Both files are written
   on every platform (LF + executable bit for the shell script, CRLF for
-  the batch file); when the configuration goes to stdout the note is
-  printed to stderr, keeping stdout pipeable. New module
-  `tiny_pacs.launcher` (`render_posix`/`render_windows`/`write_scripts`).
+  the batch file, which uses `pushd` so UNC paths work and propagates
+  the wrapped command's exit status); when the configuration goes to
+  stdout the note is printed to stderr, keeping stdout pipeable. Values
+  interpolated into the scripts are validated — configuration names or
+  interpreter paths containing quotes, cmd.exe metacharacters or
+  control characters are refused through the shared error contract
+  before anything is written. New module `tiny_pacs.launcher`
+  (`render_posix`/`render_windows`/`write_scripts`/
+  `validate_script_inputs`).
 - New first-party extension `tiny-pacs-admin` (0.1.0): a database-backed
   device registry (`DeviceStore` component, per-device identity policy,
   configurable auto-add defaults) and the `devices`, `components`, `db`

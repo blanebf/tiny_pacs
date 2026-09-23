@@ -39,18 +39,66 @@ def test_render_posix_empty_interpreter_falls_back() -> None:
     assert "PYTHON=''" in text
 
 
+@pytest.mark.parametrize('name', [
+    # A double quote closes the batch quoting form and turns the rest of
+    # the line into command separators
+    'evil"&calc&.yaml',
+    'evil"|whoami".yaml',
+    'evil">out.yaml',
+    'evil"<in.yaml',
+    'evil"^x.yaml',
+    # cmd.exe expands %VAR% even inside quotes
+    'evil%PATH%.yaml',
+    # Control characters inject lines into either template
+    'evil\nrm -rf ~ #.yaml',
+    'evil\tname.yaml',
+])
+def test_render_rejects_unsafe_config_names(name: str) -> None:
+    with pytest.raises(ValueError):
+        launcher.render_posix(name, '/usr/bin/python3')
+    with pytest.raises(ValueError):
+        launcher.render_windows(name, r'C:\py\python.exe')
+
+
+@pytest.mark.parametrize('python', [
+    '/opt/py"thon',
+    '/opt/py\nthon',
+    r'C:\py&python.exe',
+])
+def test_render_rejects_unsafe_interpreter_paths(python: str) -> None:
+    with pytest.raises(ValueError):
+        launcher.render_posix('config.yaml', python)
+    with pytest.raises(ValueError):
+        launcher.render_windows('config.yaml', python)
+
+
+def test_write_scripts_rejects_unsafe_names_without_writing(
+        tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        launcher.write_scripts(tmp_path, 'evil"&calc&.yaml')
+    assert not (tmp_path / 'cli.sh').exists()
+    assert not (tmp_path / 'cli.cmd').exists()
+
+
 def test_render_windows_uses_recorded_interpreter() -> None:
     python = r'C:\venv\Scripts\python.exe'
     text = launcher.render_windows('config.yaml', python)
     assert text.startswith('@echo off\n')
-    assert 'cd /d "%~dp0"' in text
+    # pushd (not cd) so UNC paths get a temporary drive letter, with a
+    # failure guard and a matched popd
+    assert 'pushd "%~dp0"' in text
+    assert 'if errorlevel 1 exit /b 1' in text
+    assert 'popd' in text
     assert f'set "TINY_PACS_PYTHON={python}"' in text
     assert 'set "TINY_PACS_CONFIG=config.yaml"' in text
     assert ('"%TINY_PACS_PYTHON%" -m tiny_pacs %* -c "%TINY_PACS_CONFIG%"'
             in text)
     # Fallback when the recorded interpreter is gone
     assert 'tiny-pacs %* -c "%TINY_PACS_CONFIG%"' in text
-    assert 'exit /b %errorlevel%' in text
+    # The child's exit status is captured before the cleanup so it
+    # survives popd/endlocal
+    assert 'set "TINY_PACS_STATUS=%errorlevel%"' in text
+    assert 'exit /b %TINY_PACS_STATUS%' in text
     # No parenthesized blocks, so arguments containing parentheses
     # survive %* expansion
     assert ') else (' not in text

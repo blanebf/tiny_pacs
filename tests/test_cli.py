@@ -188,6 +188,20 @@ def test_config_show_launcher_refused(
     assert 'error:' in capsys.readouterr().err
 
 
+def test_config_command_launcher_rejects_unsafe_output_name(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out_file = tmp_path / 'evil"&calc&.yaml'
+    with pytest.raises(SystemExit) as excinfo:
+        cli.config_command(cli.parse_args(
+            ['config', '-o', str(out_file), '--launcher']))
+    assert excinfo.value.code == 1
+    assert 'error:' in capsys.readouterr().err
+    # Validated before anything is written: no partial folder
+    assert not out_file.exists()
+    assert not (tmp_path / 'cli.sh').exists()
+    assert not (tmp_path / 'cli.cmd').exists()
+
+
 def test_run_command_interactive_saves_config(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     out_file = tmp_path / 'wizard.yaml'
