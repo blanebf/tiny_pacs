@@ -104,7 +104,9 @@ The value is the import path of a
 :class:`~tiny_pacs.component.Component` subclass. The component is
 registered under the entry point name on the first ``Config``
 construction, before any ``components`` section is validated — install the
-package, add a matching YAML entry and it works:
+package, add a matching YAML entry and it works (``tiny-pacs config``
+generates the entry for you: generated configurations list every
+extension component with its defaults, disabled):
 
 .. code-block:: yaml
 

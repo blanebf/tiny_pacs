@@ -267,6 +267,39 @@ def _default_components() -> dict[str, component.ComponentConfig]:
     return _validate_component_configs(DEFAULT_COMPONENTS, {})
 
 
+def extension_component_defaults() -> dict[str, component.ComponentConfig]:
+    """Default configurations of the available extension components.
+
+    Every component provided by an extension package (an entry-point
+    plugin or a programmatic :func:`register_component` call) is returned
+    with the defaults of its own configuration model, which keep the
+    component disabled (``on`` defaults to false). Built-in components are
+    not included, whether or not they are part of
+    :data:`DEFAULT_COMPONENTS`. An extension whose configuration model has
+    required fields (no defaults) cannot be constructed from an empty
+    configuration; such a component is logged and skipped.
+
+    :return: component name to default configuration of every available
+             extension component
+    :rtype: dict[str, component.ComponentConfig]
+    """
+    load_component_plugins()
+    logger = logging.getLogger('tiny_pacs.config')
+    result: dict[str, component.ComponentConfig] = {}
+    for name, factory in COMPONENT_REGISTRY.items():
+        if get_component_origin(name) == 'built-in':
+            continue
+        try:
+            result[name] = factory.config_model.model_validate({})
+        except pydantic.ValidationError:
+            logger.warning(
+                'Component %r requires configuration fields without '
+                'defaults, it cannot be pre-populated in a generated '
+                'configuration', name
+            )
+    return result
+
+
 def _validate_component_configs(
         value: Any,
         base: dict[str, component.ComponentConfig]

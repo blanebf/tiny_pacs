@@ -185,6 +185,18 @@ print it to stdout or write it to a file:
     tiny-pacs config
     tiny-pacs config -o config.yaml
 
+``config --launcher`` additionally writes launcher scripts next to the
+configuration — ``cli.sh`` for POSIX shells and ``cli.cmd`` for Windows.
+Each changes into the configuration folder and forwards its arguments to
+tiny-pacs with ``-c`` appended, so the folder runs any subcommand without
+activating an environment:
+
+.. code-block:: bash
+
+    tiny-pacs config -o config.yaml --launcher
+    ./cli.sh run                # POSIX
+    cli.cmd run                 # Windows
+
 Run either command in interactive mode: the wizard asks for every
 configuration value; with ``config`` the result is written to ``--output``
 (or printed to stdout), with ``run`` it is merged into the server

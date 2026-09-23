@@ -178,9 +178,53 @@ with the default values — either print it to stdout or write it to a file:
     tiny-pacs config
     tiny-pacs config -o config.yaml
 
+The generated configuration contains every component available in the
+environment: the built-in defaults plus all components provided by
+installed extensions (see :doc:`extensions`), the latter disabled
+(``on: false``) with their own default values — enabling an installed
+extension is a matter of flipping its ``on`` flag. Extension components
+whose configuration models require fields without defaults cannot be
+pre-populated and are skipped with a warning; add their YAML entries by
+hand.
+
 Files written by ``tiny-pacs config`` are created with restrictive
 permissions (``0600``), because configurations may contain credentials such
 as the PostgreSQL password.
+
+Launcher scripts
+~~~~~~~~~~~~~~~~
+
+A configuration folder usually lives outside the source tree, and the
+relative paths inside it (database file, storage directory, log files) only
+resolve when tiny-pacs runs from that folder. ``--launcher`` generates two
+small helper scripts next to the configuration — ``cli.sh`` for POSIX
+shells and ``cli.cmd`` for Windows — that take care of this. Each script
+changes into its own folder and forwards every argument to tiny-pacs with
+``-c <config>`` appended:
+
+.. code-block:: bash
+
+    tiny-pacs config -o config.yaml --launcher
+
+    ./cli.sh run                # start the server
+    ./cli.sh config show        # dump the effective configuration
+    ./cli.sh users list         # extension subcommands work too
+
+On Windows (from the command prompt or PowerShell):
+
+.. code-block:: bat
+
+    cli.cmd run
+    cli.cmd config show
+
+The scripts call the Python interpreter that generated them — always
+one that has tiny_pacs installed — and fall back to ``tiny-pacs`` on the
+``PATH`` when that interpreter is gone (e.g. the folder was copied to
+another machine), so the folder keeps working without activating a
+virtualenv. Both files are written on every platform, which keeps a
+configuration folder portable between POSIX systems and Windows, and
+every ``config --launcher`` run regenerates (overwrites) them together
+with the configuration.
 
 Interactive configuration
 -------------------------

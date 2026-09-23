@@ -45,7 +45,14 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
   added or replaced and are ignored with a WARNING; a broken `register()`
   is reverted so no partial subcommands remain. Invocations of the built-in
   `run`/`config` commands (and the legacy invocation) never import plugin
-  modules; `run`/`config` behaviour is unchanged.
+  CLI modules; `run` behaviour is unchanged.
+- `config.extension_component_defaults()` returns the default
+  configuration of every available extension component (non-built-in
+  registry entries), disabled per the `on: false` model default; extension
+  components whose config models have required fields are logged and
+  skipped. `tiny-pacs config` (generate, interactive or not) now includes
+  all of them in the written configuration, so enabling an installed
+  extension is a matter of flipping `on`. `config show` is unchanged.
 - `__main__.add_common_arguments(parser)` factored out of
   `add_run_arguments` for plugin CLI reuse (shared `-c/--config` flags).
 - `identity.get_user_identity(assoc)` helper returning the DICOM User
@@ -61,6 +68,18 @@ Python entry points; see the "Writing a third-party extension" tutorial page.
 - `tiny-pacs config show` dumps the effective configuration (defaults
   merged with the `-c/--config` sources); `tiny-pacs config` without the
   action keeps generating a fresh configuration.
+- `tiny-pacs config --launcher` (generate action) writes cross-platform
+  launcher scripts next to the configuration — `cli.sh` for POSIX shells
+  and `cli.cmd` for Windows. Each script changes into the configuration
+  folder (so relative DB/storage/log paths resolve next to it) and
+  forwards its arguments to tiny-pacs with `-c <config>` appended,
+  preferring the generating interpreter (`sys.executable -m tiny_pacs`)
+  and falling back to `tiny-pacs` on the `PATH`, so the folder runs any
+  subcommand without activating an environment. Both files are written
+  on every platform (LF + executable bit for the shell script, CRLF for
+  the batch file); when the configuration goes to stdout the note is
+  printed to stderr, keeping stdout pipeable. New module
+  `tiny_pacs.launcher` (`render_posix`/`render_windows`/`write_scripts`).
 - New first-party extension `tiny-pacs-admin` (0.1.0): a database-backed
   device registry (`DeviceStore` component, per-device identity policy,
   configurable auto-add defaults) and the `devices`, `components`, `db`
