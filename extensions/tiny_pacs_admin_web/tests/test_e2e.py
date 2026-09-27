@@ -446,21 +446,24 @@ def test_archive_through_shared_server(web_server: Callable[..., Any],
     first = _store_via_dicom(env, 'P1')
     _store_via_dicom(env, 'P2', name='Smith^Ann', study_date='20210601')
 
-    # The patients table shows both with drill-down links
+    # The patients table shows both with drill-down links. The pages
+    # embed a random per-session CSRF token, so the assertions match the
+    # row links instead of bare two-character patient IDs, which such a
+    # token can contain by chance.
     page = client.get('/archive/')
     assert page.status == 200
-    assert 'P1' in page.text and 'P2' in page.text
     assert '/archive/studies/P1' in page.text
+    assert '/archive/studies/P2' in page.text
     assert '2 match(es)' in page.text
 
     # Substring search on the patient name
     page = client.get('/archive/?patient_name=Smi')
-    assert 'P2' in page.text
+    assert '/archive/studies/P2' in page.text
     assert '/archive/studies/P1' not in page.text
 
     # Study date range search (the form submits YYYY-MM-DD dates)
     page = client.get('/archive/?study_date_from=2021-01-01')
-    assert 'P2' in page.text
+    assert '/archive/studies/P2' in page.text
     assert '/archive/studies/P1' not in page.text
 
     # Drill-down: studies -> series -> instances with pre-filled UIDs
@@ -481,8 +484,9 @@ def test_archive_through_shared_server(web_server: Callable[..., Any],
     # Pagination against ArchiveItem.total with a fixed page size
     monkeypatch.setattr(web_module, 'ARCHIVE_PAGE_SIZE', 1)
     page = client.get('/archive/')
-    assert 'P1' in page.text and 'P2' not in page.text
+    assert '/archive/studies/P1' in page.text
+    assert '/archive/studies/P2' not in page.text
     assert '2 match(es) — page 1 of 2' in page.text
     page = client.get('/archive/?offset=1')
-    assert 'P2' in page.text
+    assert '/archive/studies/P2' in page.text
     assert 'page 2 of 2' in page.text

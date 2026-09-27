@@ -223,22 +223,28 @@ def test_patients_table_and_search(console: Callable[..., Any]) -> None:
     assert page.text.count('<div class="field">') \
         == len(web_module.ARCHIVE_FORM_FIELDS), \
         'every label+input pair is one wrapped grid cell (layout)'
-    assert 'P1' in page.text and 'P2' in page.text
+    # The pages embed a random per-session CSRF token, so the assertions
+    # match the row links instead of bare two-character patient IDs,
+    # which such a token can contain by chance.
     assert 'Doe^John' in page.text and 'Smith^Ann' in page.text
     assert '2 match(es)' in page.text
     assert '/archive/studies/P1' in page.text
+    assert '/archive/studies/P2' in page.text
     # Substring search on the name
     page = client.get('/archive/?patient_name=Smi')
-    assert 'P2' in page.text
+    assert '/archive/studies/P2' in page.text
     assert '/archive/studies/P1' not in page.text
     # Exact filters
     page = client.get('/archive/?patient_id=P1')
-    assert 'P1' in page.text and 'P2' not in page.text
+    assert '/archive/studies/P1' in page.text
+    assert '/archive/studies/P2' not in page.text
     page = client.get('/archive/?modality=DX')
-    assert 'P2' in page.text and 'P1' not in page.text
+    assert '/archive/studies/P2' in page.text
+    assert '/archive/studies/P1' not in page.text
     page = client.get('/archive/?study_date_from=2020-01-01'
                       '&study_date_to=2020-12-31')
-    assert 'P1' in page.text and 'P2' in page.text
+    assert '/archive/studies/P1' in page.text
+    assert '/archive/studies/P2' in page.text
     page = client.get('/archive/?study_date_from=2021-01-01')
     assert 'No matching records' in page.text
 
@@ -302,16 +308,19 @@ def test_pagination_pages(console: Callable[..., Any],
     monkeypatch.setattr(web_module, 'ARCHIVE_PAGE_SIZE', 2)
     page = client.get('/archive/')
     assert '5 match(es) — page 1 of 3' in page.text
-    assert 'P1' in page.text and 'P2' in page.text
-    assert 'P3' not in page.text
+    assert '/archive/studies/P1' in page.text
+    assert '/archive/studies/P2' in page.text
+    assert '/archive/studies/P3' not in page.text
     assert 'offset=2' in page.text, 'the next-page link'
     page = client.get('/archive/?offset=2')
     assert 'page 2 of 3' in page.text
-    assert 'P3' in page.text and 'P4' in page.text
+    assert '/archive/studies/P3' in page.text
+    assert '/archive/studies/P4' in page.text
     assert 'offset=0' in page.text and 'offset=4' in page.text
     page = client.get('/archive/?offset=4')
     assert 'page 3 of 3' in page.text
-    assert 'P5' in page.text and 'P1' not in page.text
+    assert '/archive/studies/P5' in page.text
+    assert '/archive/studies/P1' not in page.text
     assert 'offset=2' in page.text
     assert 'offset=6' not in page.text, 'no next page'
 
@@ -338,7 +347,7 @@ def test_archive_viewer_read_only(console: Callable[..., Any]) -> None:
     _store(env, 'P1')
     page = client.get('/archive/')
     assert page.status == 200
-    assert 'P1' in page.text
+    assert '/archive/studies/P1' in page.text
     assert page.text.count('<form method="post"') == 1, \
         'the only POST form is the nav logout; the section is read-only'
     assert '<form method="get"' in page.text, 'the search form is GET'
