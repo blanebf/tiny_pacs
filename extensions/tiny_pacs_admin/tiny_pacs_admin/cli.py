@@ -611,4 +611,3 @@ def storage_cleanup_command(args: argparse.Namespace) -> None:
         for error in report.errors:
             print(f'error: {error}', file=sys.stderr)
         raise SystemExit(1)
-
