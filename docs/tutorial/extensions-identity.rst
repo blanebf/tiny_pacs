@@ -72,6 +72,10 @@ it; ``users list`` shows the accounts (never password hashes). Every
 subcommand accepts the shared ``-c/--config`` flags and needs the same
 persistent database configuration as the other admin commands — for
 SQLite set ``db_name`` and ``mode: rwc`` on the ``Database`` component.
+The examples above and below omit the flag for brevity: pass
+``-c config.yaml`` explicitly, or run the commands through the
+configuration folder's launcher scripts (``./cli.sh`` / ``cli.cmd``, see
+:doc:`configuration`), which append it automatically.
 
 Configuration
 -------------

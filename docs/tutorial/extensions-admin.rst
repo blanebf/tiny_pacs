@@ -124,6 +124,12 @@ error:
         db_name: pacs.db
         mode: rwc
 
+Every command therefore needs that configuration passed to it. The
+examples below omit the flag for brevity: either append
+``-c /path/to/config.yaml`` explicitly, or run the commands through the
+configuration folder's launcher scripts (``./cli.sh`` / ``cli.cmd``, see
+:doc:`configuration`), which append it automatically.
+
 Devices
 ^^^^^^^
 
@@ -161,7 +167,8 @@ connectivity with a C-ECHO:
     tiny-pacs devices remove MRI_02
     tiny-pacs devices echo MRI_01
 
-Every subcommand accepts the shared ``-c/--config`` flags:
+Every subcommand accepts the shared ``-c/--config`` flags; the launcher
+scripts of a configuration folder pass them automatically:
 
 .. code-block:: bash
 

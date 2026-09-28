@@ -78,9 +78,14 @@ The console needs two things per operator:
 
 The commands run offline through the headless admin runtime against the
 configured database, so SQLite deployments need a file-based database
-(``db_name`` plus ``mode: rwc``), like every other admin command. They
-instantiate the ``Database`` component only — no HTTP port is ever bound
-during CLI runs (the ``TINY_PACS_HEADLESS`` environment guard
+(``db_name`` plus ``mode: rwc``), like every other admin command. Every
+``web-admin`` subcommand accepts the shared ``-c/--config`` flags; the
+examples above omit them for brevity — pass ``-c config.yaml``
+explicitly, or run the commands through the configuration folder's
+launcher scripts (see :doc:`configuration`), which append the flag
+automatically. The offline runs instantiate the ``Database`` component
+only — no HTTP port is ever bound during CLI runs (the
+``TINY_PACS_HEADLESS`` environment guard
 additionally suppresses serving for any headless run that does construct
 the components: ``HttpServer`` binds nothing and ``AdminWeb`` registers
 no app while it is set).

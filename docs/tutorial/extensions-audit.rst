@@ -158,7 +158,10 @@ Query
 
 List the trail, filtered by category, event, device, user and time window.
 Every command accepts the shared ``-c/--config`` flags and a
-``--format table|json`` switch:
+``--format table|json`` switch. The configuration — passed explicitly
+with ``-c`` or appended automatically by the configuration folder's
+launcher scripts (see :doc:`configuration`) — must point at the database
+the server writes to; the examples below omit it:
 
 .. code-block:: bash
 

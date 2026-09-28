@@ -179,11 +179,12 @@ Declare the entry point and install the package (during development,
     StoreLogger = "store_logger:StoreLogger"
 
 Then enable the component in the configuration and start the server the
-usual way:
+usual way — with ``-c``, or through the configuration folder's launcher
+script (see :doc:`configuration`):
 
 .. code-block:: bash
 
-    tiny-pacs run -c config.yaml
+    tiny-pacs run -c config.yaml   # or ./cli.sh run from the config folder
 
 The configuration merges the usual defaults with the ``StoreLogger`` entry;
 every C-STORE the server accepts now also appends a line to the configured

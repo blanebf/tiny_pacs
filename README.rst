@@ -158,44 +158,49 @@ dumps the effective configuration). Running ``tiny-pacs`` without a command
 is equivalent to ``tiny-pacs run``, so the traditional invocation keeps
 working. Extensions can add further subcommands.
 
-Start the server with the built-in defaults — AE title ``TINY_PACS``, port
-``11112``, an in-memory SQLite database and in-memory storage:
+A real deployment runs from its own configuration folder. Generate the
+configuration once — filled with the built-in defaults plus every
+component provided by installed extensions (the latter disabled) —
+together with the launcher scripts, ``cli.sh`` for POSIX shells and
+``cli.cmd`` for Windows:
 
 .. code-block:: bash
 
-    tiny-pacs run
+    mkdir pacs && cd pacs
+    tiny-pacs config -o config.yaml --launcher
 
-Override the AE title and/or the port from the command line:
+Edit ``config.yaml`` for the deployment: AE title and port, a file-backed
+database, on-disk storage instead of ``InMemoryStorage``, TLS, extension
+components. Each launcher script changes into its folder and forwards
+every argument to tiny-pacs with ``-c config.yaml`` appended, so relative
+paths resolve and any subcommand runs without activating an environment:
 
 .. code-block:: bash
 
-    tiny-pacs run -a MY_PACS -p 4242
+    ./cli.sh run                # POSIX: start the server
+    ./cli.sh config show        # dump the effective configuration
+    cli.cmd run                 # Windows
 
-Load configuration from a file (YAML by extension, JSON for ``*.json``):
+To pass configuration files yourself instead, use ``-c`` (YAML by
+extension, JSON for ``*.json``); command-line options override what the
+loaded configuration sets, e.g. the AE title and/or the port:
 
 .. code-block:: bash
 
     tiny-pacs run -c config.yaml
+    tiny-pacs run -c config.yaml -a MY_PACS -p 4242
 
-Generate a YAML configuration file filled with the default values — either
-print it to stdout or write it to a file:
+``-c`` accepts several files; they are applied in order. ``tiny-pacs
+config`` without ``-o`` prints the generated YAML to stdout.
 
-.. code-block:: bash
-
-    tiny-pacs config
-    tiny-pacs config -o config.yaml
-
-``config --launcher`` additionally writes launcher scripts next to the
-configuration — ``cli.sh`` for POSIX shells and ``cli.cmd`` for Windows.
-Each changes into the configuration folder and forwards its arguments to
-tiny-pacs with ``-c`` appended, so the folder runs any subcommand without
-activating an environment:
+Without any configuration, ``run`` falls back to the bare built-in
+defaults — AE title ``TINY_PACS``, port ``11112``, an in-memory SQLite
+database and in-memory storage. Enough for a smoke test; nothing survives
+a restart:
 
 .. code-block:: bash
 
-    tiny-pacs config -o config.yaml --launcher
-    ./cli.sh run                # POSIX
-    cli.cmd run                 # Windows
+    tiny-pacs run
 
 Run either command in interactive mode: the wizard asks for every
 configuration value; with ``config`` the result is written to ``--output``
