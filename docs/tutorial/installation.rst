@@ -99,12 +99,20 @@ dependencies and the development tools (``pytest``, ``ruff``, ``flake8``,
 
 .. code-block:: bash
 
-    poetry run tiny-pacs run
+    poetry run tiny-pacs config -o config.yaml --launcher
     poetry run pytest
+
+The launcher scripts written next to the configuration record the virtual
+environment's interpreter, so the server then starts without ``poetry run``
+— or any activated environment:
+
+.. code-block:: bash
+
+    ./cli.sh run
 
 Next steps
 ----------
 
-Continue with :doc:`configuration` to learn how the server is configured,
-or jump straight to :doc:`running` to start a server with the built-in
-defaults.
+Continue with :doc:`configuration` to create a configuration folder —
+including the launcher scripts that always pass it — or jump straight to
+:doc:`running` to start the server and send your first DICOM association.

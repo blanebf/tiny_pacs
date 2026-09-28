@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tiny_pacs_identity"
-version = "0.1.0"
+version = "0.1.1"
 description = "User management and DICOM user identity authentication for tiny_pacs"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
@@ -32,14 +32,17 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-tiny_pacs = ">=0.3,<0.4"
-tiny_pacs_admin = ">=0.1,<0.2"
+tiny_pacs = ">=0.4,<0.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"
 ruff = "*"
 mypy = "^1.0"
 flake8 = "^7.0"
+# Test-only: the auth/e2e suites exercise the interaction with the real
+# admin extension (DeviceStore); the runtime package does not import it,
+# and dev-group dependencies are never published.
+tiny_pacs_admin = { path = "../tiny_pacs_admin" }
 
 # Entry points are how the extension plugs into the core: the components are
 # advertised to the ``tiny_pacs.components`` group and the CLI subcommands to

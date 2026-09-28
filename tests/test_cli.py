@@ -110,7 +110,13 @@ def test_config_command_prints_defaults(
     default = config.Config()
     assert data['ae'] == default.ae.model_dump()
     assert data['log'] == default.log
-    assert set(data['components']) == set(config.DEFAULT_COMPONENTS)
+    # Generated configurations contain the built-in defaults plus every
+    # available extension component, disabled by default
+    extensions = config.extension_component_defaults()
+    assert set(data['components']) == (set(config.DEFAULT_COMPONENTS)
+                                       | set(extensions))
+    for name in extensions:
+        assert data['components'][name]['on'] is False
 
 
 def test_config_command_output_file(tmp_path: Path) -> None:
@@ -138,6 +144,62 @@ def test_config_command_interactive(tmp_path: Path,
     assert data['ae']['port'] == 4242
     assert data['components']['Database']['on'] is True
     assert out_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_parse_args_config_launcher() -> None:
+    assert cli.parse_args(['config']).launcher is False
+    args = cli.parse_args(['config', '-o', 'conf.yaml', '--launcher'])
+    assert args.launcher is True
+
+
+def test_config_command_launcher_writes_scripts(tmp_path: Path) -> None:
+    out_file = tmp_path / 'my.yaml'
+    cli.config_command(cli.parse_args(
+        ['config', '-o', str(out_file), '--launcher']))
+    sh_file = tmp_path / 'cli.sh'
+    cmd_file = tmp_path / 'cli.cmd'
+    assert sh_file.is_file()
+    assert cmd_file.is_file()
+    # Both scripts reference the generated configuration by name
+    assert '-c my.yaml' in sh_file.read_text()
+    assert 'set "TINY_PACS_CONFIG=my.yaml"' in cmd_file.read_text()
+
+
+def test_config_command_launcher_without_output(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.chdir(tmp_path)
+    cli.config_command(cli.parse_args(['config', '--launcher']))
+    captured = capsys.readouterr()
+    # The configuration itself still goes to stdout, unpolluted by the
+    # launcher note (which is printed to stderr), so stdout stays
+    # pipeable into the configuration file
+    yaml.safe_load(captured.out)
+    assert 'Launcher scripts saved to' in captured.err
+    assert (tmp_path / 'cli.cmd').is_file()
+    assert '-c config.yaml' in (tmp_path / 'cli.sh').read_text()
+
+
+def test_config_show_launcher_refused(
+        capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        cli.config_command(cli.parse_args(['config', 'show', '--launcher']))
+    assert excinfo.value.code == 1
+    assert 'error:' in capsys.readouterr().err
+
+
+def test_config_command_launcher_rejects_unsafe_output_name(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out_file = tmp_path / 'evil"&calc&.yaml'
+    with pytest.raises(SystemExit) as excinfo:
+        cli.config_command(cli.parse_args(
+            ['config', '-o', str(out_file), '--launcher']))
+    assert excinfo.value.code == 1
+    assert 'error:' in capsys.readouterr().err
+    # Validated before anything is written: no partial folder
+    assert not out_file.exists()
+    assert not (tmp_path / 'cli.sh').exists()
+    assert not (tmp_path / 'cli.cmd').exists()
 
 
 def test_run_command_interactive_saves_config(

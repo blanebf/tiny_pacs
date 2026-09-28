@@ -158,32 +158,49 @@ dumps the effective configuration). Running ``tiny-pacs`` without a command
 is equivalent to ``tiny-pacs run``, so the traditional invocation keeps
 working. Extensions can add further subcommands.
 
-Start the server with the built-in defaults — AE title ``TINY_PACS``, port
-``11112``, an in-memory SQLite database and in-memory storage:
+A real deployment runs from its own configuration folder. Generate the
+configuration once — filled with the built-in defaults plus every
+component provided by installed extensions (the latter disabled) —
+together with the launcher scripts, ``cli.sh`` for POSIX shells and
+``cli.cmd`` for Windows:
 
 .. code-block:: bash
 
-    tiny-pacs run
+    mkdir pacs && cd pacs
+    tiny-pacs config -o config.yaml --launcher
 
-Override the AE title and/or the port from the command line:
+Edit ``config.yaml`` for the deployment: AE title and port, a file-backed
+database, on-disk storage instead of ``InMemoryStorage``, TLS, extension
+components. Each launcher script changes into its folder and forwards
+every argument to tiny-pacs with ``-c config.yaml`` appended, so relative
+paths resolve and any subcommand runs without activating an environment:
 
 .. code-block:: bash
 
-    tiny-pacs run -a MY_PACS -p 4242
+    ./cli.sh run                # POSIX: start the server
+    ./cli.sh config show        # dump the effective configuration
+    cli.cmd run                 # Windows
 
-Load configuration from a file (YAML by extension, JSON for ``*.json``):
+To pass configuration files yourself instead, use ``-c`` (YAML by
+extension, JSON for ``*.json``); command-line options override what the
+loaded configuration sets, e.g. the AE title and/or the port:
 
 .. code-block:: bash
 
     tiny-pacs run -c config.yaml
+    tiny-pacs run -c config.yaml -a MY_PACS -p 4242
 
-Generate a YAML configuration file filled with the default values — either
-print it to stdout or write it to a file:
+``-c`` accepts several files; they are applied in order. ``tiny-pacs
+config`` without ``-o`` prints the generated YAML to stdout.
+
+Without any configuration, ``run`` falls back to the bare built-in
+defaults — AE title ``TINY_PACS``, port ``11112``, an in-memory SQLite
+database and in-memory storage. Enough for a smoke test; nothing survives
+a restart:
 
 .. code-block:: bash
 
-    tiny-pacs config
-    tiny-pacs config -o config.yaml
+    tiny-pacs run
 
 Run either command in interactive mode: the wizard asks for every
 configuration value; with ``config`` the result is written to ``--output``
@@ -328,12 +345,13 @@ Example
       Devices:
         on: true
         auto_add: true            # register calling AE titles automatically
-        default_port: 11113       # port used for auto-added devices
+        default_port: 11114       # port used for auto-added devices
         devices:
           WORKSTATION:
             aet: WORKSTATION
             address: 192.168.1.10
-            port: 11113
+            port: 11114           # not 11113: keep clear of the shared
+                                  # HTTP server default port
             # Optional DICOM user identity for outgoing connections to this
             # device (used for C-MOVE sub-operations and Storage Commitment):
             # username: dicom_user
@@ -379,6 +397,12 @@ Component registry
 |                     | C-FIND, C-MOVE, C-GET and Storage Commitment requests on  |
 |                     | top of the ``Patient``/``Study``/``Series``/``Instance``  |
 |                     | database models.                                          |
++---------------------+-----------------------------------------------------------+
+| ``HttpServer``      | The single HTTP server of the process (waitress, from     |
+|                     | the ``tiny_pacs[http]`` extra): dispatches requests to    |
+|                     | the WSGI applications contributed by HTTP front-ends      |
+|                     | (admin console, DICOMweb, ...) by longest URL prefix.     |
+|                     | Binds nothing while no application is contributed.        |
 +---------------------+-----------------------------------------------------------+
 | ``FileStorage``     | Stores incoming datasets on disk: one file per SOP        |
 |                     | Instance in daily (``YYYYMMDD``) sub-folders of           |

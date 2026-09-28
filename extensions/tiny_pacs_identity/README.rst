@@ -22,9 +22,10 @@ What it provides
   for offline user management. Passwords are prompted and never accepted
   as command line arguments.
 
-It depends on ``tiny-pacs-admin``: the per-device identity policy is part
-of the device record, so installing this extension pulls the device
-registry in automatically.
+It depends on the core only: the per-device identity policy vocabulary
+(:class:`tiny_pacs.identity.IdentityPolicy`) and the user management
+events live in ``tiny_pacs``, and device registries are reached through
+the core device events.
 
 Installation
 ------------

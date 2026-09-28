@@ -4,9 +4,10 @@ import logging
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from importlib.metadata import entry_points
+from pathlib import Path
 from typing import Any, NoReturn, Protocol
 
-from . import config, interactive, server
+from . import config, interactive, launcher, server
 
 #: Entry point group advertising CLI subcommands. Every distribution
 #: installed into the environment may declare ``name = module:register``
@@ -68,13 +69,24 @@ def config_command(args: argparse.Namespace) -> None:
 
     Without ``--interactive`` the effective default configuration is
     written; with ``--interactive`` every configuration value is asked
-    on the terminal first. The ``show`` action loads the configuration
-    from ``-c/--config`` and dumps the effective result (defaults merged
-    with the loaded sources).
+    on the terminal first. Generated configurations also contain every
+    available extension component with its defaults (off), so enabling an
+    extension is a matter of flipping ``on``. The ``show`` action loads
+    the configuration from ``-c/--config`` and dumps the effective result
+    (defaults merged with the loaded sources).
+
+    ``generate --launcher`` additionally writes the launcher scripts (see
+    :mod:`tiny_pacs.launcher`) next to the configuration, so the folder
+    can run any tiny-pacs subcommand against it without activating an
+    environment. The folder configuration is appended after the
+    forwarded arguments and ``-c`` takes the last occurrence, so the
+    scripts supersede a ``-c`` of their own.
 
     :param args: parsed ``config`` command arguments
     """
     if args.action == 'show':
+        if args.launcher:
+            fail('--launcher is only supported by "config generate"')
         conf = config.Config()
         conf.update_config(args.config)
         if args.output:
@@ -83,7 +95,18 @@ def config_command(args: argparse.Namespace) -> None:
         else:
             sys.stdout.write(config.dump_yaml(conf))
         return
+    target = Path(args.output) if args.output else Path('config.yaml')
+    if args.launcher:
+        # Validate before anything is written, so an unusable output name
+        # neither leaves a partial folder nor a configuration without its
+        # launcher scripts
+        try:
+            launcher.validate_script_inputs(target.name, sys.executable)
+        except ValueError as exc:
+            fail(str(exc))
     conf = config.Config()
+    for name, extension_conf in config.extension_component_defaults().items():
+        conf.components.setdefault(name, extension_conf)
     if args.interactive:
         front = interactive.TerminalFront()
         conf.update_config(front.run_questionnairies())
@@ -92,6 +115,13 @@ def config_command(args: argparse.Namespace) -> None:
         print(f'Configuration saved to {args.output}')
     else:
         sys.stdout.write(config.dump_yaml(conf))
+    if args.launcher:
+        written = launcher.write_scripts(target.parent, target.name)
+        # Without --output stdout carries the YAML itself and must stay
+        # pipeable, so the note goes to stderr
+        stream = sys.stdout if args.output else sys.stderr
+        print('Launcher scripts saved to '
+              + ', '.join(str(path) for path in written), file=stream)
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -260,6 +290,14 @@ def build_parser(load_plugins: bool = True) -> argparse.ArgumentParser:
     config_parser.add_argument('-i', '--interactive', action='store_true',
                                help='Provide configuration values '
                                     'interactively')
+    config_parser.add_argument(
+        '--launcher', action='store_true',
+        help='Also write launcher scripts (cli.sh for POSIX shells, '
+             'cli.cmd for Windows) next to the generated configuration; '
+             'each runs any tiny-pacs subcommand from that folder with '
+             '-c <config> appended. Only supported by the "generate" '
+             'action'
+    )
 
     if load_plugins:
         load_cli_plugins(subparsers)

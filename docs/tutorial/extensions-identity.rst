@@ -13,9 +13,12 @@ The extension contributes two components:
 * ``UserIdentityAuth`` — enforces the identity policies on incoming
   associations.
 
-It depends on ``tiny-pacs-admin``: the identity policy is part of the
-device record (see :doc:`extensions-admin`), so installing
-``tiny-pacs-identity`` pulls the device registry in automatically.
+It depends on the core only: the identity policy vocabulary
+(:class:`tiny_pacs.identity.IdentityPolicy`) and the user management
+events (:class:`~tiny_pacs.events.UserByName`,
+:class:`~tiny_pacs.events.UserVerify` and friends) live in
+``tiny_pacs``, and device registries are reached through the core
+device events — there is no dependency on ``tiny-pacs-admin``.
 
 Installation
 ------------
@@ -69,6 +72,10 @@ it; ``users list`` shows the accounts (never password hashes). Every
 subcommand accepts the shared ``-c/--config`` flags and needs the same
 persistent database configuration as the other admin commands — for
 SQLite set ``db_name`` and ``mode: rwc`` on the ``Database`` component.
+The examples above and below omit the flag for brevity: pass
+``-c config.yaml`` explicitly, or run the commands through the
+configuration folder's launcher scripts (``./cli.sh`` / ``cli.cmd``, see
+:doc:`configuration`), which append it automatically.
 
 Configuration
 -------------

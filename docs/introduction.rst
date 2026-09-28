@@ -50,6 +50,12 @@ The built-in components are:
      - The PACS services themselves: handling of C-STORE, C-FIND, C-MOVE,
        C-GET and Storage Commitment requests on top of the
        ``Patient``/``Study``/``Series``/``Instance`` database models.
+   * - ``HttpServer``
+     - The single HTTP server of the process (waitress, from the
+       ``tiny_pacs[http]`` extra): dispatches requests to the WSGI
+       applications contributed by HTTP front-ends (the admin console,
+       DICOMweb, ...) through the ``HttpAppsRegistry`` event by longest
+       URL prefix. Binds nothing while no application is contributed.
    * - ``FileStorage``
      - Stores incoming datasets on disk: one file per SOP Instance in daily
        sub-folders of ``storage_dir``.

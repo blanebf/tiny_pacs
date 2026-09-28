@@ -12,13 +12,16 @@ policy; the policy resolution order is the device policy itself, then
 one, then :attr:`UserIdentityAuthConfig.unknown_device_policy` for
 unknown devices.
 
+Users are read exclusively through the core user events
+(:class:`~tiny_pacs.events.UserVerify`): the component never touches
+user records directly, so the user registry stays a separate concern.
+
 Security note: User Identity negotiation transmits credentials inside
 A-ASSOCIATE. Enable TLS (``ae.tls``) whenever non-``none`` identity
 policies are used.
 """
 import enum
-import secrets
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import trolleybus
 from pynetdicom2 import exceptions, pdu
@@ -26,13 +29,10 @@ from pynetdicom2.userdataitems import (
     UserIdentityNegotiationSubItem,
     UserIdentityNegotiationSubItemAc,
 )
-from tiny_pacs import component, events
+from tiny_pacs import assoc_context, component, events
 from tiny_pacs import identity as core_identity
-from tiny_pacs_admin import events as admin_events
-from tiny_pacs_admin.models import IdentityPolicy
+from tiny_pacs.identity import IdentityPolicy
 
-from . import events as identity_events
-from . import hashing, models
 from .models import UserModel
 
 #: Username-only identity (PS3.7 D.3.3.7.1, type 1)
@@ -104,12 +104,6 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
         """
         super().__init__(bus, config)
         self.subscribe(events.Assoc, self.on_assoc)
-        # Pre-computed hash verified against for unknown or inactive
-        # users, so every password attempt runs exactly one proof and
-        # rejection timing never reveals whether a username exists
-        self._dummy_password_hash = hashing.hash_password(
-            secrets.token_urlsafe(32)
-        )
 
     def on_started(self) -> None:
         """Handles `OnStarted` event.
@@ -121,13 +115,13 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
         configured consistently.
         """
         super().on_started()
-        if not self.bus.has_listeners(identity_events.UserByName):
+        if not self.bus.has_listeners(events.UserVerify):
             self.log_error(
                 'UserIdentityAuth is enabled but no Users component '
                 'provides user accounts; every presented identity is '
                 'treated as an unknown user'
             )
-        auto_add_identity = self.send_any(admin_events.AutoAddIdentity, None)
+        auto_add_identity = self.send_any(events.AutoAddIdentity, None)
         if auto_add_identity is None:
             return
         if auto_add_identity.value != self.config.unknown_device_policy.value:
@@ -145,8 +139,9 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
         Decodes the User Identity sub-item, resolves the calling
         device's identity policy and verifies the presented credentials.
         A failed verification rejects the association; a successful one
-        records the login and answers a positive identity response when
-        the request asked for one.
+        writes the authenticated user into the core association context
+        (for auditing and access control) and answers a positive identity
+        response when the request asked for one.
 
         :param payload: association acceptor and request parameters
         :type payload: events.AssocPayload
@@ -164,7 +159,9 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
                 'Association from %s authenticated as %s',
                 calling_aet, user.username
             )
-            self._update_last_login(user)
+            context = assoc_context.current()
+            if context is not None:
+                context.username = user.username
         self._answer_identity(assoc, identity_item)
 
     def _resolve_policy(self, calling_aet: str) -> str:
@@ -250,7 +247,7 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
             self._reject(
                 calling_aet, 'username/password identity is required'
             )
-        user = self._known_user(username)
+        user = self._verify_user(username, None)
         if policy == _NONE:
             # Advisory verification: log the failure, accept anyway
             if user is None:
@@ -276,18 +273,10 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
         password = identity_item.secondary_field
         if not isinstance(username, str) or not isinstance(password, str):
             self._reject(calling_aet, 'identity fields are not valid text')
-        user = self._known_user(username)
-        if user is not None:
-            valid = hashing.verify_password(password, user.password_hash)
-        else:
-            # Equalize timing: run one password proof even for unknown
-            # or inactive users, so a rejection never reveals whether
-            # the username exists
-            hashing.verify_password(password, self._dummy_password_hash)
-            valid = False
+        user = self._verify_user(username, password)
         if policy == _NONE:
             # Advisory verification: log the failure, accept anyway
-            if not valid:
+            if user is None:
                 self.log_warning(
                     'Association from %s presents invalid credentials '
                     'for user %s; accepting due to the none identity '
@@ -295,29 +284,27 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
                 )
                 return None
             return user
-        if not valid:
+        if user is None:
             self._reject(calling_aet, 'invalid credentials')
         return user
 
-    def _known_user(self, username: str) -> UserModel | None:
-        """Looks up an active user by login name.
+    def _verify_user(self, username: str,
+                     password: str | None) -> UserModel | None:
+        """Verifies credentials through the core `UserVerify` event.
 
+        A ``None`` password is a username-only check (identity type 1).
         Returns None when no user registry is listening (the ``Users``
         component is disabled): the authentication then fails closed
         instead of aborting the association with an event bus error.
+        The handler records the successful authentication itself
+        (``last_login``) and equalizes the verification timing for
+        unknown users.
         """
-        if not self.bus.has_listeners(identity_events.UserByName):
+        if not self.bus.has_listeners(events.UserVerify):
             return None
-        user = self.send_one(identity_events.UserByName, username)
-        if user is None or not user.is_active:
-            return None
-        return user
-
-    @staticmethod
-    def _update_last_login(user: UserModel) -> None:
-        """Records the successful authentication of a user."""
-        user.last_login = models._utcnow()
-        user.save()
+        return cast('UserModel | None', self.send_one(
+            events.UserVerify, {'username': username, 'password': password}
+        ))
 
     @staticmethod
     def _answer_identity(
@@ -348,11 +335,13 @@ class UserIdentityAuth(component.Component[UserIdentityAuthConfig]):
         """Rejects the association being authenticated.
 
         The rejection aborts the remaining ``Assoc`` listeners, so lower
-        priority components (device auto-add) never see the request.
+        priority components (device auto-add) never see the request. The
+        reason travels on the exception so the AE can broadcast it with
+        :class:`~tiny_pacs.events.AssocRejected`.
 
         :raises pynetdicom2.exceptions.AssociationRejectedError: always
         """
         self.log_warning(
             'Rejecting association from %s: %s', calling_aet, reason
         )
-        raise exceptions.AssociationRejectedError(1, 1, 7)
+        raise exceptions.AssociationRejectedError(1, 1, 7, reason)

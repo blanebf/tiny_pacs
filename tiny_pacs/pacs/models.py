@@ -9,6 +9,14 @@ class Patient(peewee.Model):
     """Patient model.
 
     Stores all C-FIND relevant patient attributes.
+
+    The DICOM patient identity key is the pair of Patient ID (0010,0020)
+    and Issuer of Patient ID (0010,0021) (PS3.3 C.7.1.1): the same ID
+    string issued by different assigning authorities denotes different
+    patients, so the pair is unique per record and demographics play no
+    part in patient identity. The issuer of datasets that carry none is
+    stored as an empty string rather than NULL, so the unique index also
+    holds for the (common) issuer-less records.
     """
     mapping = {
         0x00100010: ('patient_name', 'PN'),
@@ -22,18 +30,25 @@ class Patient(peewee.Model):
         0x00104000: ('patient_comments', 'LT')
     }
 
+    class Meta:
+        #: The patient identity key: (Patient ID, Issuer of Patient ID)
+        indexes = ((('patient_id', 'issuer_of_patient_id'), True),)
+
     #: Primary key
     id = peewee.AutoField(primary_key=True)
 
     #: Patient's Name (0010, 0010) PN
     patient_name = peewee.CharField(max_length=64*5+4, index=True, null=True)
 
-    #: Patient's ID (0010, 0020) LO
-    patient_id = peewee.CharField(max_length=64, unique=True)
+    #: Patient's ID (0010, 0020) LO; unique within
+    #: :attr:`issuer_of_patient_id` only (see ``Meta.indexes`` — the
+    #: composite unique index also serves Patient ID prefix lookups)
+    patient_id = peewee.CharField(max_length=64)
 
-    #: Issuer of Patient's ID (0010, 0021) LO
+    #: Issuer of Patient's ID (0010, 0021) LO; empty string when the
+    #: dataset carries no issuer
     issuer_of_patient_id = peewee.CharField(max_length=64, index=True,
-                                            null=True)
+                                            default='')
 
     #: Patient's Birth Date (0010, 0030) DA
     patient_birth_date = peewee.CharField(max_length=8, index=True, null=True)
@@ -52,6 +67,15 @@ class Patient(peewee.Model):
 
     #: Patient Comments (0010, 4000) LT
     patient_comments = peewee.TextField(default='')
+
+    #: Patient Identity Removed (0012, 0062) CS: 'YES' when the dataset
+    #: declared its identity removed per PS3.15 E, '' when the attribute
+    #: was absent
+    patient_identity_removed = peewee.CharField(max_length=16, default='')
+
+    #: De-identification Method (0012, 0063) LO or the code meanings of
+    #: the De-identification Method Code Sequence (0012, 0064)
+    deidentification_method = peewee.TextField(default='')
 
     # Number of Patient Related Studies (0020,1200)
     # Number of Patient Related Series (0020,1202)

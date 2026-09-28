@@ -17,3 +17,9 @@ python:
       path: extensions/tiny_pacs_admin
     - method: pip
       path: extensions/tiny_pacs_identity
+    - method: pip
+      path: extensions/tiny_pacs_audit
+    - method: pip
+      path: extensions/tiny_pacs_admin_web
+    - method: pip
+      path: extensions/tiny_pacs_dicomweb

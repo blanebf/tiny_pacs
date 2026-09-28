@@ -4,16 +4,15 @@ from typing import Any
 
 import pydantic
 import pytest
-from conftest import _identity_item, assoc_payload
 from pynetdicom2 import exceptions, pdu
 from pynetdicom2.userdataitems import (
     UserIdentityNegotiationSubItem,
     UserIdentityNegotiationSubItemAc,
 )
+from tiny_pacs import assoc_context
 from tiny_pacs import devices as core_devices
 from tiny_pacs import events as core_events
 
-from tiny_pacs_identity import events as identity_events
 from tiny_pacs_identity import hashing
 from tiny_pacs_identity.auth import (
     UnknownDevicePolicy,
@@ -22,10 +21,12 @@ from tiny_pacs_identity.auth import (
 )
 from tiny_pacs_identity.models import UserModel
 
+from .conftest import _identity_item, assoc_payload
+
 
 def _add_user(bus: Any, username: str = 'alice',
               password: str = 'secret') -> None:
-    bus.send_one(identity_events.UserAdd,
+    bus.send_one(core_events.UserAdd,
                  {'username': username, 'password': password})
 
 
@@ -195,7 +196,7 @@ def test_inactive_user_rejected(identity_bus: Any) -> None:
         devices_conf=_devices_with_policy('username'), auth_conf={}
     )
     _add_user(bus)
-    bus.send_one(identity_events.UserSetActive,
+    bus.send_one(core_events.UserSetActive,
                  {'username': 'alice', 'is_active': False})
     with pytest.raises(exceptions.AssociationRejectedError):
         bus.broadcast(core_events.Assoc, assoc_payload(
@@ -386,3 +387,49 @@ def test_config_model_validation() -> None:
         UserIdentityAuthConfig.model_validate(
             {'unknown_device_policy': 'kerberos'}
         )
+
+
+def test_rejection_carries_reason(identity_bus: Any) -> None:
+    """The rejection reason travels on the exception (AssocRejected)."""
+    bus, _, _, _, _ = identity_bus(
+        devices_conf=_devices_with_policy('password'), auth_conf={}
+    )
+    _add_user(bus)
+    with pytest.raises(exceptions.AssociationRejectedError) as info:
+        bus.broadcast(core_events.Assoc, assoc_payload(
+            'MODALITY', _identity_item('alice', 'wrong')))
+    assert str(info.value) == 'invalid credentials'
+
+
+def test_authenticated_user_enriches_assoc_context(identity_bus: Any) -> None:
+    """Successful authentication writes the principal into the core
+    association context (audit/access-control read it from there)."""
+    bus, _, _, _, _ = identity_bus(
+        devices_conf=_devices_with_policy('password'), auth_conf={}
+    )
+    _add_user(bus)
+    payload = assoc_payload('MODALITY', _identity_item('alice', 'secret'))
+    # The AE opens the context before broadcasting Assoc
+    context = assoc_context.open_context(payload.asce, payload.assoc)
+    try:
+        bus.broadcast(core_events.Assoc, payload)
+        assert context.username == 'alice'
+        assert assoc_context.current() is context
+    finally:
+        assoc_context.close_current()
+
+
+def test_rejected_auth_leaves_context_without_user(
+        identity_bus: Any) -> None:
+    bus, _, _, _, _ = identity_bus(
+        devices_conf=_devices_with_policy('password'), auth_conf={}
+    )
+    _add_user(bus)
+    payload = assoc_payload('MODALITY', _identity_item('alice', 'wrong'))
+    context = assoc_context.open_context(payload.asce, payload.assoc)
+    try:
+        with pytest.raises(exceptions.AssociationRejectedError):
+            bus.broadcast(core_events.Assoc, payload)
+        assert context.username is None
+    finally:
+        assoc_context.close_current()

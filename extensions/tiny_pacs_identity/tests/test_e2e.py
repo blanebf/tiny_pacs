@@ -19,10 +19,9 @@ from pynetdicom2.userdataitems import (
 from tiny_pacs import client as core_client
 from tiny_pacs import config as core_config
 from tiny_pacs import devices as core_devices
+from tiny_pacs import events as core_events
 from tiny_pacs import server as core_server
 from tiny_pacs_admin.models import DeviceModel
-
-from tiny_pacs_identity import events as identity_events
 
 #: The calling AE title used by the test client
 CLIENT_AET = 'MODALITY'
@@ -77,7 +76,7 @@ def auth_server() -> Iterator[Callable[..., tuple[core_server.Server, int]]]:
         srv.start()
         servers.append(srv)
         for username, password in (users or []):
-            srv.bus.send_one(identity_events.UserAdd, {
+            srv.bus.send_one(core_events.UserAdd, {
                 'username': username, 'password': password
             })
         assert srv.ae is not None
@@ -247,5 +246,5 @@ def test_last_login_persisted(auth_server: Callable[..., Any]) -> None:
         users=[('alice', 'secret')]
     )
     _client(port, 'alice', 'secret').echo()
-    row = srv.bus.send_one(identity_events.UserByName, 'alice')
+    row = srv.bus.send_one(core_events.UserByName, 'alice')
     assert row.last_login is not None

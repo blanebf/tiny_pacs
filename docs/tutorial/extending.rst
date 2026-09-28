@@ -25,11 +25,14 @@ components this way.
 
 Components talk to each other through
 `trolleybus <https://pypi.org/project/trolleybus/>`_ events defined in
-:mod:`tiny_pacs.events`. An incoming C-STORE request, for example, becomes
-a :class:`~tiny_pacs.events.Store` event that the ``PACS`` and storage
-components handle; when the dataset is safely stored, a
-:class:`~tiny_pacs.events.StoreDone` event is broadcast. A component joins
-the conversation simply by subscribing to events.
+:mod:`tiny_pacs.events`. An incoming C-STORE request, for example,
+becomes a :class:`~tiny_pacs.events.Store` event — the observation point
+carrying the association context, e.g. for auditing or access control —
+and then a :class:`~tiny_pacs.events.StoreDataset` event with the decoded
+dataset that the ``PACS`` component records in the archive; when the
+dataset is safely stored, a :class:`~tiny_pacs.events.StoreDone` event is
+broadcast. A component joins the conversation simply by subscribing to
+events.
 
 Every component provides its own configuration as a ``pydantic`` model, and
 the config loader validates the raw ``components`` section against the model
@@ -176,11 +179,12 @@ Declare the entry point and install the package (during development,
     StoreLogger = "store_logger:StoreLogger"
 
 Then enable the component in the configuration and start the server the
-usual way:
+usual way — with ``-c``, or through the configuration folder's launcher
+script (see :doc:`configuration`):
 
 .. code-block:: bash
 
-    tiny-pacs run -c config.yaml
+    tiny-pacs run -c config.yaml   # or ./cli.sh run from the config folder
 
 The configuration merges the usual defaults with the ``StoreLogger`` entry;
 every C-STORE the server accepts now also appends a line to the configured

@@ -162,6 +162,25 @@ def test_component_receives_validated_model() -> None:
     assert database.config.db_name == ':memory:'
 
 
+def test_dump_yaml_keeps_component_subclass_fields(
+        tmp_path: pathlib.Path) -> None:
+    # ``components`` is declared against the ComponentConfig base, so a plain
+    # Config.model_dump() would serialize entries with base-class fields
+    # only; dump_yaml must keep subclass fields (e.g. FileStorage
+    # ``storage_dir``/``overwrite``) so the wizard/config save round-trips.
+    conf = config.Config()
+    conf.update_config({'components': {'FileStorage': {
+        'on': True, 'storage_dir': '/srv/pacs', 'overwrite': True}}})
+    out_file = tmp_path / 'conf.yaml'
+    config.write_yaml(conf, str(out_file))
+    restored = config.Config()
+    restored.update_config(str(out_file))
+    storage_conf = restored.components['FileStorage']
+    assert isinstance(storage_conf, storage.FileStorageConfig)
+    assert storage_conf.storage_dir == '/srv/pacs'
+    assert storage_conf.overwrite is True
+
+
 def test_register_component() -> None:
     class _ExtraConfig(component.ComponentConfig):
         option: str = 'default'
