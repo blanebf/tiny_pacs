@@ -121,21 +121,36 @@ A complete example
       Devices:
         on: true
         auto_add: true            # register calling AE titles automatically
-        default_port: 11113       # port used for auto-added devices
+        default_port: 11114       # port used for auto-added devices
         devices:
           WORKSTATION:
             aet: WORKSTATION
             address: 192.168.1.10
-            port: 11113
+            port: 11114           # not 11113: keep clear of the shared
+                                  # HTTP server default port
             # Optional DICOM user identity for outgoing connections to this
             # device (used for C-MOVE sub-operations and Storage Commitment):
             # username: dicom_user
             # password: secret
       PACS:
         on: true
+        # Optional: Patient IDs (recognized case-insensitively) treated
+        # as de-identification placeholders of incoming datasets. Such
+        # datasets — like the ones with the PS3.15 E de-identification
+        # attributes or with an empty Patient ID — are stored without
+        # demographic conflict warnings (one shared record per distinct
+        # Patient ID string), because the identity attributes of
+        # anonymized data carry no identity semantics.
+        # anonymous_patient_ids: [ANONYMOUS]
       FileStorage:
         on: true
         storage_dir: /var/lib/tiny_pacs/storage
+        # Optional (shared by every storage component): when a C-STORE
+        # arrives for an instance that is already stored, refuse it with a
+        # failure status (default) or replace the stored instance. A
+        # replacement keeps the stored copy until the new one is fully
+        # stored, and a failed replacement rolls back to it.
+        # overwrite: false
 
 The PostgreSQL driver takes connection parameters instead:
 
@@ -163,9 +178,82 @@ with the default values — either print it to stdout or write it to a file:
     tiny-pacs config
     tiny-pacs config -o config.yaml
 
+The generated configuration contains every component available in the
+environment: the built-in defaults plus all components provided by
+installed extensions (see :doc:`extensions`), the latter disabled
+(``on: false``) with their own default values — enabling an installed
+extension is a matter of flipping its ``on`` flag. Extension components
+whose configuration models require fields without defaults cannot be
+pre-populated and are skipped with a warning; add their YAML entries by
+hand.
+
 Files written by ``tiny-pacs config`` are created with restrictive
 permissions (``0600``), because configurations may contain credentials such
 as the PostgreSQL password.
+
+Generated comments
+~~~~~~~~~~~~~~~~~~
+
+Generated files explain themselves: every component section opens with a
+comment derived from the component class docstring and its origin
+(built-in, or the installed extension providing it — extension components
+are introduced by a banner, as they are off by default), and every option
+carries the documentation of the configuration model (its ``:ivar:``
+entries or a Pydantic ``Field(description=...)``) plus machine-checked
+facts appended in parentheses — allowed enum values (``one of: sqlite,
+postgres``), numeric bounds (``0..65535``) and required/optional markers.
+The facts come from the models themselves, so they never drift; a test
+enforces that every field of every component configuration model keeps an
+``:ivar:`` entry or a field description. Secret-carrying fields (like the
+PostgreSQL password) additionally warn that they are stored in plain text.
+
+``tiny-pacs config show`` annotates the effective configuration the same
+way. Pass ``--no-comments`` to either action to write the bare YAML for
+machine consumers or minimal diffs. Comments are ignored when a
+configuration is loaded, so both variants work everywhere.
+
+Launcher scripts
+~~~~~~~~~~~~~~~~
+
+A configuration folder usually lives outside the source tree, and the
+relative paths inside it (database file, storage directory, log files) only
+resolve when tiny-pacs runs from that folder. ``--launcher`` generates two
+small helper scripts next to the configuration — ``cli.sh`` for POSIX
+shells and ``cli.cmd`` for Windows — that take care of this. Each script
+changes into its own folder and forwards every argument to tiny-pacs with
+``-c <config>`` appended:
+
+.. code-block:: bash
+
+    tiny-pacs config -o config.yaml --launcher
+
+    ./cli.sh run                # start the server
+    ./cli.sh config show        # dump the effective configuration
+    ./cli.sh users list         # extension subcommands work too
+
+On Windows (from the command prompt or PowerShell):
+
+.. code-block:: bat
+
+    cli.cmd run
+    cli.cmd config show
+
+The scripts call the Python interpreter that generated them — always
+one that has tiny_pacs installed — and fall back to ``tiny-pacs`` on the
+``PATH`` when that interpreter is gone (e.g. the folder was copied to
+another machine), so the folder keeps working without activating a
+virtualenv. Both files are written on every platform, which keeps a
+configuration folder portable between POSIX systems and Windows, and
+every ``config --launcher`` run regenerates (overwrites) them together
+with the configuration.
+
+The folder configuration is appended *after* the forwarded arguments and
+the last ``-c`` occurrence wins, so a ``-c`` passed to a wrapper itself
+is superseded by the folder's configuration. Values interpolated into
+the scripts are validated: configuration names or interpreter paths
+containing characters that cannot be embedded safely (quotes, cmd.exe
+metacharacters, control characters) are refused with an error before
+anything is written.
 
 Interactive configuration
 -------------------------

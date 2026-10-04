@@ -9,9 +9,9 @@ from pynetdicom2 import pdu
 from tiny_pacs import db as core_db
 from tiny_pacs import devices as core_devices
 from tiny_pacs import events as core_events
+from tiny_pacs.identity import IdentityPolicy
 
-from tiny_pacs_admin import events as admin_events
-from tiny_pacs_admin.models import DeviceModel, IdentityPolicy
+from tiny_pacs_admin.models import DeviceModel
 from tiny_pacs_admin.store import DeviceStoreConfig
 
 
@@ -102,7 +102,7 @@ def test_device_by_ae_db_wins_over_devices(admin_bus: Any) -> None:
     # in-memory registry advertising the same AE title with different
     # settings joins at the default (lower) priority.
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd, {
+    bus.send_one(core_events.DeviceAdd, {
         'aet': 'SHARED', 'address': '10.0.0.2', 'port': 2
     })
     core_devices.Devices(bus, {'devices': {
@@ -139,7 +139,7 @@ def test_auto_add_persists_defaults(admin_bus: Any) -> None:
 
 def test_auto_add_keeps_known_device(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd, {
+    bus.send_one(core_events.DeviceAdd, {
         'aet': 'KNOWN', 'address': '10.0.0.4', 'port': 444,
         'identity': 'password'
     })
@@ -189,11 +189,11 @@ def test_auto_add_runs_before_default_priority(admin_bus: Any) -> None:
 
 def test_device_list_event(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd,
+    bus.send_one(core_events.DeviceAdd,
                  {'aet': 'B_DEV', 'address': 'h2', 'port': 2})
-    bus.send_one(admin_events.DeviceAdd,
+    bus.send_one(core_events.DeviceAdd,
                  {'aet': 'A_DEV', 'address': 'h1', 'port': 1})
-    rows = bus.send_one(admin_events.DeviceList, None)
+    rows = bus.send_one(core_events.DeviceList, None)
     assert [row.aet for row in rows] == ['A_DEV', 'B_DEV']
 
 
@@ -201,7 +201,7 @@ def test_device_add_applies_config_defaults(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus(
         store_conf={'default_port': 5555, 'default_identity': 'password'}
     )
-    row = bus.send_one(admin_events.DeviceAdd,
+    row = bus.send_one(core_events.DeviceAdd,
                        {'aet': 'DEFAULTS', 'address': '10.0.0.10'})
     assert row.port == 5555
     assert row.identity == IdentityPolicy.PASSWORD.value
@@ -210,40 +210,40 @@ def test_device_add_applies_config_defaults(admin_bus: Any) -> None:
 def test_device_add_requires_fields(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
     with pytest.raises(ValueError, match='aet is required'):
-        bus.send_one(admin_events.DeviceAdd, {'address': '10.0.0.1'})
+        bus.send_one(core_events.DeviceAdd, {'address': '10.0.0.1'})
     with pytest.raises(ValueError, match='address is required'):
-        bus.send_one(admin_events.DeviceAdd, {'aet': 'NO_ADDR'})
+        bus.send_one(core_events.DeviceAdd, {'aet': 'NO_ADDR'})
 
 
 def test_device_add_rejects_duplicates(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd,
+    bus.send_one(core_events.DeviceAdd,
                  {'aet': 'DUP', 'address': '10.0.0.1'})
     with pytest.raises(ValueError, match='already exists'):
-        bus.send_one(admin_events.DeviceAdd,
+        bus.send_one(core_events.DeviceAdd,
                      {'aet': 'DUP', 'address': '10.0.0.2'})
 
 
 def test_device_add_validates_values(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
     with pytest.raises(ValueError, match='not a valid IdentityPolicy'):
-        bus.send_one(admin_events.DeviceAdd,
+        bus.send_one(core_events.DeviceAdd,
                      {'aet': 'X', 'address': 'h', 'identity': 'kerberos'})
     with pytest.raises(ValueError, match='port must be an integer'):
-        bus.send_one(admin_events.DeviceAdd,
+        bus.send_one(core_events.DeviceAdd,
                      {'aet': 'X', 'address': 'h', 'port': 'high'})
     with pytest.raises(ValueError, match='port must be within'):
-        bus.send_one(admin_events.DeviceAdd,
+        bus.send_one(core_events.DeviceAdd,
                      {'aet': 'X', 'address': 'h', 'port': 70000})
 
 
 def test_device_update_partial(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd, {
+    bus.send_one(core_events.DeviceAdd, {
         'aet': 'UPD', 'address': '10.0.0.11', 'port': 111,
         'identity': 'none'
     })
-    row = bus.send_one(admin_events.DeviceUpdate,
+    row = bus.send_one(core_events.DeviceUpdate,
                        {'aet': 'UPD', 'identity': 'password'})
     assert row.identity == IdentityPolicy.PASSWORD.value
     assert row.address == '10.0.0.11'
@@ -253,30 +253,30 @@ def test_device_update_partial(admin_bus: Any) -> None:
 def test_device_update_unknown(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
     with pytest.raises(ValueError, match='Unknown device'):
-        bus.send_one(admin_events.DeviceUpdate,
+        bus.send_one(core_events.DeviceUpdate,
                      {'aet': 'GHOST', 'port': 1})
 
 
 def test_device_update_no_changes(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd,
+    bus.send_one(core_events.DeviceAdd,
                  {'aet': 'SAME', 'address': '10.0.0.12'})
     with pytest.raises(ValueError, match='Nothing to update'):
-        bus.send_one(admin_events.DeviceUpdate, {'aet': 'SAME'})
+        bus.send_one(core_events.DeviceUpdate, {'aet': 'SAME'})
 
 
 def test_device_remove(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd,
+    bus.send_one(core_events.DeviceAdd,
                  {'aet': 'GONE', 'address': '10.0.0.13'})
-    assert bus.send_one(admin_events.DeviceRemove, 'GONE') is True
-    assert bus.send_one(admin_events.DeviceRemove, 'GONE') is False
+    assert bus.send_one(core_events.DeviceRemove, 'GONE') is True
+    assert bus.send_one(core_events.DeviceRemove, 'GONE') is False
     assert DeviceModel.select().count() == 0
 
 
 def test_extra_fields_roundtrip(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd, {
+    bus.send_one(core_events.DeviceAdd, {
         'aet': 'EXTRA_DEV', 'address': '10.0.0.14', 'port': 104,
         'vendor': 'ACME', 'location': 'Room 3'
     })
@@ -295,7 +295,7 @@ def test_extra_fields_roundtrip(admin_bus: Any) -> None:
 
 def test_remote_ae_never_carries_identity(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    bus.send_one(admin_events.DeviceAdd, {
+    bus.send_one(core_events.DeviceAdd, {
         'aet': 'IDENT', 'address': '10.0.0.15', 'port': 104,
         'identity': 'password', 'username': 'alice', 'password': 'secret'
     })
@@ -310,13 +310,13 @@ def test_remote_ae_never_carries_identity(admin_bus: Any) -> None:
 
 def test_auto_add_identity_event(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus(store_conf={'default_identity': 'password'})
-    policy = bus.send_any(admin_events.AutoAddIdentity, None)
+    policy = bus.send_any(core_events.AutoAddIdentity, None)
     assert policy == IdentityPolicy.PASSWORD
 
 
 def test_auto_add_identity_default(admin_bus: Any) -> None:
     bus, _, _, _ = admin_bus()
-    policy = bus.send_any(admin_events.AutoAddIdentity, None)
+    policy = bus.send_any(core_events.AutoAddIdentity, None)
     assert policy == IdentityPolicy.NONE
 
 
@@ -330,3 +330,29 @@ def test_config_model_validation() -> None:
         DeviceStoreConfig.model_validate({'default_identity': 'kerberos'})
     with pytest.raises(pydantic.ValidationError):
         DeviceStoreConfig.model_validate({'default_port': 70000})
+
+
+def test_mutations_emit_audit_records(admin_bus: Any) -> None:
+    """Successful device mutations are broadcast for the audit trail."""
+    bus, _, _, _ = admin_bus()
+    records: list[Any] = []
+    bus.subscribe(core_events.AuditRecord, records.append)
+    bus.send_one(core_events.DeviceAdd, {
+        'aet': 'AUD', 'address': '10.0.0.30', 'port': 104,
+        'password': 'secret'
+    })
+    bus.send_one(core_events.DeviceUpdate, {'aet': 'AUD', 'port': 105})
+    bus.send_one(core_events.DeviceRemove, 'AUD')
+    # Removing an unknown device emits nothing
+    assert bus.send_one(core_events.DeviceRemove, 'AUD') is False
+    assert [(r.event, r.device_aet) for r in records] == [
+        ('device-add', 'AUD'),
+        ('device-update', 'AUD'),
+        ('device-remove', 'AUD')
+    ]
+    assert all(r.category == 'admin' and r.status == 'success'
+               for r in records)
+    assert records[0].details['port'] == 104
+    # Credentials never reach the audit details
+    assert 'password' not in records[0].details
+    assert records[1].details == {'fields': ['port']}

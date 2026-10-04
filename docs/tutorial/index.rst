@@ -15,4 +15,7 @@ self-contained.
    extensions
    extensions-admin
    extensions-identity
+   extensions-audit
+   extensions-admin-web
+   extensions-dicomweb
    migrations

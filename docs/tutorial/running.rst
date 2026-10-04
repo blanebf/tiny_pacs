@@ -11,20 +11,33 @@ The CLI provides two commands: ``run`` starts the server and ``config``
 generates a configuration file (see :doc:`configuration`). Running
 ``tiny-pacs`` without a command is equivalent to ``tiny-pacs run``.
 
-Start the server with the built-in defaults — AE title ``TINY_PACS``, port
-``11112``, an in-memory SQLite database and in-memory storage:
+The recommended setup runs from a dedicated configuration folder.
+Generate it once — a configuration file filled with the built-in
+defaults plus every component provided by installed extensions
+(disabled), and the launcher scripts that always pass it (see
+:doc:`configuration`):
 
 .. code-block:: bash
 
-    tiny-pacs run
+    mkdir pacs && cd pacs
+    tiny-pacs config -o config.yaml --launcher
 
-Override the AE title and/or the port from the command line:
+Edit ``config.yaml`` for the deployment — AE title and port, a file-backed
+database, on-disk storage instead of ``InMemoryStorage`` — and start the
+server through the launcher:
 
 .. code-block:: bash
 
-    tiny-pacs run -a MY_PACS -p 4242
+    ./cli.sh run                # POSIX
+    cli.cmd run                 # Windows
 
-Load configuration from a file (YAML by extension, JSON for ``*.json``):
+Each script changes into its folder and appends ``-c config.yaml``, so
+the relative paths in the configuration (database, storage, logs) resolve
+and every subcommand — ``config show`` or any extension command — runs
+against the folder's configuration without activating an environment.
+
+To pass configuration files yourself instead, use ``-c`` (YAML by
+extension, JSON for ``*.json``):
 
 .. code-block:: bash
 
@@ -35,6 +48,22 @@ Load configuration from a file (YAML by extension, JSON for ``*.json``):
 .. code-block:: bash
 
     tiny-pacs run -c common.yaml overrides.yaml
+
+Command-line options override the loaded configuration, e.g. the AE title
+and/or the port:
+
+.. code-block:: bash
+
+    tiny-pacs run -c config.yaml -a MY_PACS -p 4242
+
+Without a configuration, ``run`` falls back to the bare built-in defaults
+— AE title ``TINY_PACS``, port ``11112``, an in-memory SQLite database
+and in-memory storage. Enough for the smoke tests in the rest of this
+tutorial; nothing survives a restart:
+
+.. code-block:: bash
+
+    tiny-pacs run
 
 Or run the interactive wizard and start the server with its answers:
 
@@ -75,8 +104,9 @@ Send a DICOM file (or a whole directory) to the server:
         --address localhost --port 11112 --file_or_dir image.dcm
 
 With the default components the dataset is kept in the in-memory storage;
-configure ``FileStorage`` (see :doc:`configuration`) to persist datasets on
-disk.
+switch the storage component to ``FileStorage`` in your configuration
+folder and restart it through its launcher script (see :doc:`configuration`)
+to persist datasets on disk.
 
 Querying: C-FIND
 ----------------

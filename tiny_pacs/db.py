@@ -46,6 +46,10 @@ class DatabaseConfig(component.ComponentConfig):
     :ivar uri: connect via URI (SQLite only)
     :ivar mode: SQLite URI open mode (``memory``, ``rwc``, ...)
     :ivar max_conn: maximum number of pooled connections
+    :ivar wal: enable the SQLite WAL journal mode (ignored by PostgreSQL)
+    :ivar busy_timeout: SQLite ``busy_timeout`` in milliseconds; how long
+                        a blocked write waits for the lock instead of
+                        failing with ``database is locked``
     :ivar host: PostgreSQL host
     :ivar port: PostgreSQL port
     :ivar user: PostgreSQL user
@@ -57,6 +61,8 @@ class DatabaseConfig(component.ComponentConfig):
     uri: bool = True
     mode: str = 'memory'
     max_conn: int = 20
+    wal: bool = True
+    busy_timeout: int = 10000
     host: str = 'localhost'
     port: int = 5432
     user: str = 'postgres'
@@ -107,6 +113,9 @@ class Database(component.Component[DatabaseConfig]):
         super().__init__(bus, config)
         self.subscribe(events.Atomic, self.atomic)
         self.subscribe(events.StringAgg, self.string_agg_func)
+        self.subscribe(events.SchemaVersions, self.schema_versions)
+        self.subscribe(events.TableCounts, self.table_counts)
+        self.subscribe(events.CloseConnection, self.close_connection)
         self.db: peewee.Database | None = None
 
     @classmethod
@@ -202,17 +211,75 @@ class Database(component.Component[DatabaseConfig]):
             return peewee.fn.string_agg
         raise ValueError(f'Unexpected DB object {self.db}')
 
+    def schema_versions(self, _: None = None) -> dict[str, int]:
+        """Handles `SchemaVersions` event.
+
+        :return: applied schema version of every component
+        :rtype: dict[str, int]
+        :raises RuntimeError: raised when the database is not initialized
+        """
+        if self.db is None:
+            raise RuntimeError('Database is not initialized')
+        return {
+            row.component: row.version
+            for row in SchemaVersion.select()
+        }
+
+    def table_counts(self, _: None = None) -> dict[str, int]:
+        """Handles `TableCounts` event.
+
+        :return: row count of every table of the database
+        :rtype: dict[str, int]
+        :raises RuntimeError: raised when the database is not initialized
+        """
+        if self.db is None:
+            raise RuntimeError('Database is not initialized')
+        counts: dict[str, int] = {}
+        for table in sorted(self.db.get_tables()):
+            cursor = self.db.execute_sql(f'SELECT COUNT(*) FROM "{table}"')
+            row = cursor.fetchone()
+            counts[table] = int(row[0]) if row is not None else 0
+        return counts
+
+    def close_connection(self, _: None = None) -> None:
+        """Handles `CloseConnection` event.
+
+        Closes the database connection of the calling thread; peewee tracks
+        connections per thread, so this runs in the thread that performed
+        the queries. With the pooled drivers (see :class:`DatabaseConfig`)
+        the connection is returned to the pool instead of being destroyed:
+        worker threads (association threads, HTTP handlers) must send this
+        event when their unit of work ends, because the pool only reclaims
+        connections on close and thread exits alone leak them permanently.
+        """
+        if self.db is not None and not self.db.is_closed():
+            self.db.close()
+
     def _init_sqlite(self) -> peewee.SqliteDatabase:
         """Initializes SQLite database."""
         config = self.config
         db_name = config.db_name or 'pacs.db'
         if config.uri:
             db_name = f'file:{db_name}?mode={config.mode}&cache=shared'
-        self.log_info('Initialized SQLite database %s', db_name)
+        pragmas: dict[str, Any] = {'busy_timeout': config.busy_timeout}
+        if config.wal:
+            pragmas['journal_mode'] = 'wal'
+        self.log_info(
+            'Initialized SQLite database %s (wal=%s, busy_timeout=%dms)',
+            db_name, config.wal, config.busy_timeout
+        )
+        # ``check_same_thread=False`` is required for the pool: every
+        # thread (association, HTTP worker) checks connections out and
+        # back in, so a returned connection is legitimately reused by
+        # another thread and sqlite3's same-thread guard would reject
+        # it. The pool hands a connection to at most one thread at a
+        # time and the sqlite3 module is serialized, so the reuse is
+        # safe.
         return cast(
             peewee.SqliteDatabase,
             pool.PooledSqliteDatabase(
-                db_name, uri=config.uri, max_connections=config.max_conn
+                db_name, uri=config.uri, max_connections=config.max_conn,
+                pragmas=pragmas, check_same_thread=False
             )
         )
 

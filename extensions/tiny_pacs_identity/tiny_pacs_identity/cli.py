@@ -12,6 +12,7 @@ import getpass
 import json
 from typing import Any
 
+from tiny_pacs import events as core_events
 from tiny_pacs.__main__ import (
     CommandHandler,
     SubParsers,
@@ -19,9 +20,8 @@ from tiny_pacs.__main__ import (
     fail,
     format_table,
 )
-from tiny_pacs_admin import runtime
+from tiny_pacs.admin import AdminError, admin_context
 
-from . import events as identity_events
 from .models import UserModel
 from .users import Users
 
@@ -32,7 +32,7 @@ def _command(handler: CommandHandler) -> CommandHandler:
     def wrapper(args: argparse.Namespace) -> None:
         try:
             handler(args)
-        except (runtime.AdminError, ValueError) as error:
+        except (AdminError, ValueError) as error:
             fail(str(error))
     return wrapper
 
@@ -117,8 +117,8 @@ def _user_data(row: UserModel) -> dict[str, Any]:
 @_command
 def users_list_command(args: argparse.Namespace) -> None:
     """Lists the registered users."""
-    with runtime.admin_context(args.config, [Users.name()]) as (bus, _):
-        rows = bus.send_one(identity_events.UserList, None)
+    with admin_context(args.config, [Users.name()]) as (bus, _):
+        rows = bus.send_one(core_events.UserList, None)
     data = [_user_data(row) for row in rows]
     if args.format == 'json':
         print(json.dumps(data, indent=2, default=str))
@@ -134,8 +134,8 @@ def users_list_command(args: argparse.Namespace) -> None:
 def users_add_command(args: argparse.Namespace) -> None:
     """Registers a new user; the password is prompted."""
     password = _prompt_password()
-    with runtime.admin_context(args.config, [Users.name()]) as (bus, _):
-        row = bus.send_one(identity_events.UserAdd, {
+    with admin_context(args.config, [Users.name()]) as (bus, _):
+        row = bus.send_one(core_events.UserAdd, {
             'username': args.username, 'password': password
         })
     print(f'Added user {row.username}')
@@ -145,8 +145,8 @@ def users_add_command(args: argparse.Namespace) -> None:
 def users_passwd_command(args: argparse.Namespace) -> None:
     """Changes the password of a user; the password is prompted."""
     password = _prompt_password()
-    with runtime.admin_context(args.config, [Users.name()]) as (bus, _):
-        row = bus.send_one(identity_events.UserSetPassword, {
+    with admin_context(args.config, [Users.name()]) as (bus, _):
+        row = bus.send_one(core_events.UserSetPassword, {
             'username': args.username, 'password': password
         })
     print(f'Changed password of user {row.username}')
@@ -155,8 +155,8 @@ def users_passwd_command(args: argparse.Namespace) -> None:
 @_command
 def users_remove_command(args: argparse.Namespace) -> None:
     """Removes a user."""
-    with runtime.admin_context(args.config, [Users.name()]) as (bus, _):
-        removed = bus.send_one(identity_events.UserRemove, args.username)
+    with admin_context(args.config, [Users.name()]) as (bus, _):
+        removed = bus.send_one(core_events.UserRemove, args.username)
     if not removed:
         fail(f'Unknown user {args.username}')
     print(f'Removed user {args.username}')
@@ -165,8 +165,8 @@ def users_remove_command(args: argparse.Namespace) -> None:
 @_command
 def users_set_active_command(args: argparse.Namespace) -> None:
     """Activates or deactivates a user."""
-    with runtime.admin_context(args.config, [Users.name()]) as (bus, _):
-        row = bus.send_one(identity_events.UserSetActive, {
+    with admin_context(args.config, [Users.name()]) as (bus, _):
+        row = bus.send_one(core_events.UserSetActive, {
             'username': args.username, 'is_active': args.active
         })
     state = 'active' if row.is_active else 'inactive'

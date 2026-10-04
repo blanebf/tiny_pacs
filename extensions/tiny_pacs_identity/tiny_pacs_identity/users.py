@@ -4,18 +4,22 @@ Keeps the users that incoming associations authenticate as in the
 database. Passwords are stored salted and hashed (see
 :mod:`tiny_pacs_identity.hashing`), never in plaintext; the
 :class:`~tiny_pacs_identity.auth.UserIdentityAuth` component consumes the
-records when enforcing a device's identity policy.
+records through the core :class:`~tiny_pacs.events.UserVerify` event when
+enforcing a device's identity policy.
+
+User mutations are broadcast as :class:`~tiny_pacs.events.AuditRecord`
+so an installed audit component records them.
 
 Create and maintain users with the ``users`` CLI subcommands against the
 offline database before starting a server that requires identity.
 """
+import secrets
 from collections.abc import Mapping
 from typing import Any
 
 import trolleybus
 from tiny_pacs import component, events, schema
 
-from . import events as identity_events
 from . import hashing, models
 from .models import UserModel
 
@@ -38,12 +42,13 @@ class Users(component.Component[UsersConfig]):
     Handles the following events:
 
         * :class:`~tiny_pacs.events.Migrations`
-        * :class:`~tiny_pacs_identity.events.UserByName`
-        * :class:`~tiny_pacs_identity.events.UserList`
-        * :class:`~tiny_pacs_identity.events.UserAdd`
-        * :class:`~tiny_pacs_identity.events.UserSetPassword`
-        * :class:`~tiny_pacs_identity.events.UserRemove`
-        * :class:`~tiny_pacs_identity.events.UserSetActive`
+        * :class:`~tiny_pacs.events.UserByName`
+        * :class:`~tiny_pacs.events.UserVerify`
+        * :class:`~tiny_pacs.events.UserList`
+        * :class:`~tiny_pacs.events.UserAdd`
+        * :class:`~tiny_pacs.events.UserSetPassword`
+        * :class:`~tiny_pacs.events.UserRemove`
+        * :class:`~tiny_pacs.events.UserSetActive`
     """
 
     config_model = UsersConfig
@@ -61,14 +66,20 @@ class Users(component.Component[UsersConfig]):
         :type config: UsersConfig or dict
         """
         super().__init__(bus, config)
+        # Pre-computed hash verified against for unknown or inactive
+        # users, so every password attempt runs exactly one proof and
+        # rejection timing never reveals whether a username exists
+        self._dummy_password_hash = hashing.hash_password(
+            secrets.token_urlsafe(32)
+        )
         self.subscribe(events.Migrations, self.migrations)
-        self.subscribe(identity_events.UserByName, self.user_by_name)
-        self.subscribe(identity_events.UserList, self.user_list)
-        self.subscribe(identity_events.UserAdd, self.user_add)
-        self.subscribe(identity_events.UserSetPassword,
-                       self.user_set_password)
-        self.subscribe(identity_events.UserRemove, self.user_remove)
-        self.subscribe(identity_events.UserSetActive, self.user_set_active)
+        self.subscribe(events.UserByName, self.user_by_name)
+        self.subscribe(events.UserVerify, self.user_verify)
+        self.subscribe(events.UserList, self.user_list)
+        self.subscribe(events.UserAdd, self.user_add)
+        self.subscribe(events.UserSetPassword, self.user_set_password)
+        self.subscribe(events.UserRemove, self.user_remove)
+        self.subscribe(events.UserSetActive, self.user_set_active)
 
     def migrations(self, _: None = None) -> schema.ComponentMigrations:
         """Returns schema migrations of the component tables
@@ -89,6 +100,67 @@ class Users(component.Component[UsersConfig]):
         :rtype: UserModel or None
         """
         return UserModel.get_or_none(UserModel.username == username)
+
+    def user_verify(self, payload: Mapping[str, Any]) -> UserModel | None:
+        """Handles `UserVerify` event
+
+        Verifies the presented credentials: exactly one password proof
+        runs — against a dummy hash for unknown or inactive users — so
+        the timing never reveals whether the username exists. A ``None``
+        password is a username-only check (DICOM user identity type 1).
+        A successful verification records the login (``last_login``).
+
+        A missing, empty or oversized username is treated like an unknown
+        user (failed verification, never an exception): DICOM identity
+        items carry arbitrary peer-provided text, and a raised error
+        would kill the association without an A-ASSOCIATE-RJ instead of
+        rejecting it cleanly.
+
+        :param payload: ``username`` and ``password`` mapping; the
+                        password may be None for username-only checks
+        :type payload: Mapping
+        :return: the authenticated user record or None
+        :rtype: UserModel or None
+        :raises ValueError: raised when the password is neither a string
+                            nor None (a programming error, not peer input)
+        """
+        password = payload.get('password')
+        if password is not None and not isinstance(password, str):
+            raise ValueError('password must be a string or None')
+        try:
+            username = self._clean_username(payload.get('username'))
+        except ValueError:
+            username = None
+        if username is None:
+            if password is not None:
+                # Keep the timing equal with the regular verification
+                hashing.verify_password(password,
+                                        self._dummy_password_hash)
+            return None
+        row = UserModel.get_or_none(UserModel.username == username)
+        active = row is not None and row.is_active
+        if password is None:
+            if not active:
+                return None
+        else:
+            if active:
+                assert row is not None
+                valid = hashing.verify_password(password, row.password_hash)
+            else:
+                hashing.verify_password(password, self._dummy_password_hash)
+                valid = False
+            if not valid:
+                return None
+        # Both success paths imply an existing, active user
+        assert row is not None
+        self._record_login(row)
+        return row
+
+    def _record_login(self, row: UserModel) -> None:
+        """Records a successful authentication of a user."""
+        with self.atomic():
+            row.last_login = models._utcnow()
+            row.save()
 
     def user_list(self, _: None = None) -> list[UserModel]:
         """Handles `UserList` event
@@ -121,6 +193,7 @@ class Users(component.Component[UsersConfig]):
                 created=models._utcnow()
             )
         self.log_info('Added user %s', username)
+        self._audit('user-add', username)
         return row
 
     def user_set_password(self, payload: Mapping[str, Any]) -> UserModel:
@@ -142,6 +215,8 @@ class Users(component.Component[UsersConfig]):
             row.password_hash = hashing.hash_password(password)
             row.save()
         self.log_info('Changed password of user %s', username)
+        # The record notes the fact of the change, never the value
+        self._audit('user-passwd', username)
         return row
 
     def user_remove(self, username: str) -> bool:
@@ -162,6 +237,7 @@ class Users(component.Component[UsersConfig]):
         )
         if deleted:
             self.log_info('Removed user %s', username)
+            self._audit('user-remove', username)
         return deleted
 
     def user_set_active(self, payload: Mapping[str, Any]) -> UserModel:
@@ -188,6 +264,7 @@ class Users(component.Component[UsersConfig]):
             row.save()
         self.log_info('User %s is now %s',
                       username, 'active' if is_active else 'inactive')
+        self._audit('user-set-active', username, is_active=is_active)
         return row
 
     @staticmethod
@@ -227,3 +304,22 @@ class Users(component.Component[UsersConfig]):
         :return: atomic transaction
         """
         return self.send_one(events.Atomic, None)
+
+    def _audit(self, event: str, username: str, **details: Any) -> None:
+        """Broadcasts an audit record of a successful user mutation.
+
+        Fire-and-forget: listener failures never affect the mutation, and
+        no listener is required. Details never contain secrets.
+
+        :param event: audit event name, e.g. ``user-add``
+        :type event: str
+        :param username: login name of the affected user
+        :type username: str
+        """
+        self.broadcast_nothrow(
+            events.AuditRecord,
+            events.AuditRecordPayload(
+                category='admin', event=event,
+                details={'user': username, **details}
+            )
+        )

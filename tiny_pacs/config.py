@@ -25,7 +25,7 @@ import yaml  # type: ignore[import-untyped]
 from pydicom import uid
 from pynetdicom2 import uids
 
-from . import component, db, devices, pacs, storage
+from . import component, config_comments, db, devices, http, pacs, storage
 
 ConfigInput: TypeAlias = str | list[str] | IO[bytes] | dict[str, Any]
 
@@ -107,6 +107,7 @@ COMPONENT_REGISTRY: dict[str, type[component.Component[Any]]] = {
     'Database': db.Database,
     'Devices': devices.Devices,
     'PACS': pacs.PACS,
+    'HttpServer': http.HttpServer,
     'FileStorage': storage.FileStorage,
     'InMemoryStorage': storage.InMemoryStorage,
     'TempFileStorage': storage.TempFileStorage
@@ -266,6 +267,39 @@ def _default_components() -> dict[str, component.ComponentConfig]:
     return _validate_component_configs(DEFAULT_COMPONENTS, {})
 
 
+def extension_component_defaults() -> dict[str, component.ComponentConfig]:
+    """Default configurations of the available extension components.
+
+    Every component provided by an extension package (an entry-point
+    plugin or a programmatic :func:`register_component` call) is returned
+    with the defaults of its own configuration model, which keep the
+    component disabled (``on`` defaults to false). Built-in components are
+    not included, whether or not they are part of
+    :data:`DEFAULT_COMPONENTS`. An extension whose configuration model has
+    required fields (no defaults) cannot be constructed from an empty
+    configuration; such a component is logged and skipped.
+
+    :return: component name to default configuration of every available
+             extension component
+    :rtype: dict[str, component.ComponentConfig]
+    """
+    load_component_plugins()
+    logger = logging.getLogger('tiny_pacs.config')
+    result: dict[str, component.ComponentConfig] = {}
+    for name, factory in COMPONENT_REGISTRY.items():
+        if get_component_origin(name) == 'built-in':
+            continue
+        try:
+            result[name] = factory.config_model.model_validate({})
+        except pydantic.ValidationError:
+            logger.warning(
+                'Component %r requires configuration fields without '
+                'defaults, it cannot be pre-populated in a generated '
+                'configuration', name
+            )
+    return result
+
+
 def _validate_component_configs(
         value: Any,
         base: dict[str, component.ComponentConfig]
@@ -415,7 +449,7 @@ class Config(pydantic.BaseModel):
             return json.load(fp)
 
 
-def dump_yaml(conf: Config) -> str:
+def dump_yaml(conf: Config, comments: bool = True) -> str:
     """Serializes a configuration into a YAML document.
 
     The output contains the effective configuration with all the default
@@ -423,18 +457,43 @@ def dump_yaml(conf: Config) -> str:
     with :meth:`Config.update_config` or via the ``-c`` command-line
     option.
 
+    With ``comments`` (the default) the document is annotated by
+    :mod:`tiny_pacs.config_comments`: a banner, per-section and
+    per-component comments derived from the component and configuration
+    model docstrings, and machine-checked facts (enum values, numeric
+    bounds, required fields). Comments are ignored by ``yaml.safe_load``,
+    so the round-trip is unaffected; ``comments=False`` keeps the plain
+    dump for machine consumers.
+
     :param conf: configuration to serialize
     :type conf: Config
+    :param comments: generate explanatory comments, defaults to True
+    :type comments: bool
     :return: YAML representation of the configuration
     :rtype: str
     """
+    data = conf.model_dump()
+    # ``components`` is declared as a mapping onto the ComponentConfig base,
+    # so Config.model_dump() serializes every entry against the base schema
+    # and silently drops subclass fields (e.g. FileStorage ``storage_dir``
+    # or ``overwrite``); dump each component with its actual model instead.
+    # JSON mode keeps enums (e.g. the database ``driver``) representable by
+    # yaml.safe_dump and re-validates into the same values on load.
+    data['components'] = {
+        name: component_config.model_dump(mode='json')
+        for name, component_config in conf.components.items()
+    }
     text: str = yaml.safe_dump(
-        conf.model_dump(), sort_keys=False, default_flow_style=False
+        data, sort_keys=False, default_flow_style=False
     )
-    return text
+    if not comments:
+        return text
+    return config_comments.render_commented_yaml(
+        conf, text, COMPONENT_REGISTRY, COMPONENT_ORIGINS
+    )
 
 
-def write_yaml(conf: Config, file_name: str) -> None:
+def write_yaml(conf: Config, file_name: str, comments: bool = True) -> None:
     """Writes a configuration to a file readable only by its owner.
 
     Configurations may contain credentials (e.g. the PostgreSQL password),
@@ -444,7 +503,9 @@ def write_yaml(conf: Config, file_name: str) -> None:
     :type conf: Config
     :param file_name: name of the file to write
     :type file_name: str
+    :param comments: generate explanatory comments, defaults to True
+    :type comments: bool
     """
     fd = os.open(file_name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w') as fp:
-        fp.write(dump_yaml(conf))
+        fp.write(dump_yaml(conf, comments=comments))

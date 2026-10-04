@@ -19,7 +19,7 @@ Within a core minor series (e.g. ``0.3.x``) the following never break:
 * everything documented in :mod:`tiny_pacs.events`,
   :mod:`tiny_pacs.schema` and the API reference;
 * the CLI helpers :func:`tiny_pacs.__main__.add_common_arguments` and the
-  headless admin runtime.
+  headless admin runtime :func:`tiny_pacs.admin.admin_context`.
 
 Breaking changes land in a new minor series and are announced in the
 changelog together with a migration note. Extensions pin the core minor
@@ -28,7 +28,7 @@ series they were built and tested against:
 .. code-block:: toml
 
     [tool.poetry.dependencies]
-    tiny_pacs = ">=0.3,<0.4"
+    tiny_pacs = ">=0.4,<0.5"
 
 Entry point groups
 ------------------
@@ -104,7 +104,9 @@ The value is the import path of a
 :class:`~tiny_pacs.component.Component` subclass. The component is
 registered under the entry point name on the first ``Config``
 construction, before any ``components`` section is validated — install the
-package, add a matching YAML entry and it works:
+package, add a matching YAML entry and it works (``tiny-pacs config``
+generates the entry for you: generated configurations list every
+extension component with its defaults, disabled):
 
 .. code-block:: yaml
 
@@ -177,7 +179,7 @@ running deployment is a no-op until the operator opts in.
 Checklist for extension authors
 -------------------------------
 
-- Depend on ``tiny_pacs >=0.3,<0.4`` — the minor series built and tested
+- Depend on ``tiny_pacs >=0.4,<0.5`` — the minor series built and tested
   against.
 - Declare entry points in the groups you implement (table key per your
   metadata style — ``[tool.poetry.plugins."group"]`` for legacy Poetry

@@ -19,15 +19,15 @@ class ComponentConfig(pydantic.BaseModel):
     model (see :attr:`Component.config_model`); the config loader validates
     the raw component configuration against that model at load time.
 
-    :ivar on: enables the component; disabled components are skipped
+    :ivar on: whether the component is enabled. Components are skipped
+              unless ``on`` is true, so the default is false: an entry
+              that omits ``on`` does not enable the component. The
+              built-in default components set ``on`` explicitly (see
+              :data:`tiny_pacs.config.DEFAULT_COMPONENTS`).
     """
 
     model_config = pydantic.ConfigDict(extra='forbid')
 
-    #: Whether the component is enabled. Components are skipped unless ``on``
-    #: is true, so the default is false: an entry that omits ``on`` does not
-    #: enable the component. The built-in default components set ``on``
-    #: explicitly (see :data:`tiny_pacs.config.DEFAULT_COMPONENTS`).
     on: bool = False
 
     @pydantic.model_validator(mode='before')

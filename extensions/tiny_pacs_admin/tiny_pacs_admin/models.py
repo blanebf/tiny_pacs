@@ -4,25 +4,15 @@ Provides the database-backed device record used by the
 :class:`~tiny_pacs_admin.store.DeviceStore` component, together with its
 baseline schema migration published through the
 :class:`tiny_pacs.events.Migrations` mechanism.
+
+The identity policy vocabulary (:class:`tiny_pacs.identity.IdentityPolicy`)
+is owned by the core and shared with the authentication extensions.
 """
 import datetime
-import enum
 
 import peewee
 from tiny_pacs import schema
-
-
-class IdentityPolicy(str, enum.Enum):
-    """Identity requirement of a device for incoming associations."""
-
-    #: No user identity required
-    NONE = 'none'
-
-    #: User identity required; username must exist, password is optional
-    USERNAME = 'username'
-
-    #: Username/password identity (type 2) with a valid password required
-    PASSWORD = 'password'
+from tiny_pacs.identity import IdentityPolicy
 
 
 def _utcnow() -> datetime.datetime:

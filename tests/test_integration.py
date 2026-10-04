@@ -8,7 +8,7 @@ import trolleybus
 from pydicom import uid
 from pynetdicom2 import applicationentity, fsm, sopclass, statuses, uids
 
-from tiny_pacs import client, config, devices, events, server
+from tiny_pacs import client, config, devices, events, server, storage
 
 
 @pytest.fixture
@@ -33,8 +33,8 @@ def pacs_port(_pacs: server.Server) -> int:
     return int(_pacs.ae.server.server_address[1])
 
 
-@pytest.fixture
-def pacs_client(pacs: server.Server) -> client.DICOMClient:
+def _client_for(_pacs: server.Server) -> client.DICOMClient:
+    """Builds a DICOM client connected to a running server."""
     def main_aet(_: None) -> str:
         return 'TEST_CLIENT'
     bus = trolleybus.EventBus()
@@ -44,12 +44,17 @@ def pacs_client(pacs: server.Server) -> client.DICOMClient:
             'TINY_PACS': {
                 'aet': 'TINY_PACS',
                 'address': '127.0.0.1',
-                'port': pacs_port(pacs)
+                'port': pacs_port(_pacs)
             }
         }
     })
     _client = client.Client(bus, {})
     return _client.get('TINY_PACS')
+
+
+@pytest.fixture
+def pacs_client(pacs: server.Server) -> client.DICOMClient:
+    return _client_for(pacs)
 
 
 @pytest.fixture
@@ -95,6 +100,106 @@ def test_storage(pacs: server.Server, pacs_client: client.DICOMClient,
                  test_ds: pydicom.Dataset) -> None:
     pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
                       uid.ImplicitVRLittleEndian)
+
+
+def test_duplicate_store_refused(pacs: server.Server,
+                                 pacs_client: client.DICOMClient,
+                                 test_ds: pydicom.Dataset) -> None:
+    """Re-storing an existing instance must fail cleanly, not abort.
+
+    With ``overwrite`` off (the default) a duplicate C-STORE is answered
+    with a failure status instead of tearing down the association.
+    """
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+    with pytest.raises(client.CStoreError) as exc:
+        pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                          uid.ImplicitVRLittleEndian)
+    assert int(exc.value.status) == int(storage.DUPLICATE_REJECTED_STATUS)
+    # The association was not aborted: a follow-up store of a *new* instance
+    # on a fresh association still succeeds.
+    other = test_ds.copy()
+    other.SOPInstanceUID = uid.generate_uid()
+    pacs_client.store(other, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+
+
+@pytest.fixture
+def overwrite_pacs() -> Iterator[server.Server]:
+    """Server whose storage allows overwriting already-stored instances."""
+    conf = config.Config()
+    conf.update_config({
+        'ae': {'port': 0},
+        'components': {
+            'Database': {'on': True, 'db_name': str(uuid.uuid4())},
+            'InMemoryStorage': {'on': True, 'overwrite': True}
+        }
+    })
+    _pacs = server.Server(conf)
+    _pacs.start()
+    yield _pacs
+    _pacs.exit()
+
+
+def test_duplicate_store_overwrite(overwrite_pacs: server.Server,
+                                   test_ds: pydicom.Dataset) -> None:
+    """With ``overwrite`` on a duplicate C-STORE succeeds and stays unique."""
+    pacs_client = _client_for(overwrite_pacs)
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+    pacs_client.store(test_ds, uids.BASIC_TEXT_SR_STORAGE,
+                      uid.ImplicitVRLittleEndian)
+    find_request = pydicom.Dataset()
+    find_request.QueryRetrieveLevel = 'IMAGE'
+    find_request.StudyInstanceUID = None
+    find_request.SeriesInstanceUID = None
+    find_request.SOPInstanceUID = None
+    results = list(pacs_client.find(find_request))
+    assert len(results) == 1
+
+
+@pytest.fixture
+def small_pool_pacs() -> Iterator[server.Server]:
+    """Server whose pool has just one slot beyond the main thread's.
+
+    The startup migrations leave the main thread holding one pooled
+    connection, so with ``max_conn: 2`` only a single association thread
+    fits at a time: associations succeed only while every per-association
+    thread returns its connection to the pool when it is done.
+    """
+    conf = config.Config()
+    conf.update_config({
+        'ae': {'port': 0},
+        'components': {
+            'Database': {
+                'on': True,
+                'db_name': str(uuid.uuid4()),
+                'max_conn': 2
+            }
+        }
+    })
+    _pacs = server.Server(conf)
+    _pacs.start()
+    yield _pacs
+    _pacs.exit()
+
+
+def test_store_releases_pool_connections(
+        small_pool_pacs: server.Server,
+        test_ds: pydicom.Dataset) -> None:
+    """Stores over more associations than the pool has slots must work.
+
+    Every C-STORE runs on fresh threads (the connection thread and the
+    per-association DUL thread) that both check out pooled connections.
+    Leaked connections used to abort the store with
+    ``playhouse.pool.MaxConnectionsExceeded`` once the pool filled up.
+    """
+    pacs_client = _client_for(small_pool_pacs)
+    for _ in range(4):
+        ds = test_ds.copy()
+        ds.SOPInstanceUID = uid.generate_uid()
+        pacs_client.store(ds, uids.BASIC_TEXT_SR_STORAGE,
+                          uid.ImplicitVRLittleEndian)
 
 
 class CStoreAE(applicationentity.AE):

@@ -27,10 +27,10 @@ import peewee
 import pydantic
 import trolleybus
 from tiny_pacs import component, devices, events, schema
+from tiny_pacs.identity import IdentityPolicy
 
-from . import events as admin_events
 from . import models
-from .models import DeviceModel, IdentityPolicy
+from .models import DeviceModel
 
 
 class DeviceStoreConfig(component.ComponentConfig):
@@ -52,11 +52,14 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
         * :class:`~tiny_pacs.events.Assoc` (persists auto-added devices)
         * :class:`~tiny_pacs.events.DeviceByAE`
         * :class:`~tiny_pacs.events.Migrations`
-        * :class:`~tiny_pacs_admin.events.DeviceList`
-        * :class:`~tiny_pacs_admin.events.DeviceAdd`
-        * :class:`~tiny_pacs_admin.events.DeviceUpdate`
-        * :class:`~tiny_pacs_admin.events.DeviceRemove`
-        * :class:`~tiny_pacs_admin.events.AutoAddIdentity`
+        * :class:`~tiny_pacs.events.DeviceList`
+        * :class:`~tiny_pacs.events.DeviceAdd`
+        * :class:`~tiny_pacs.events.DeviceUpdate`
+        * :class:`~tiny_pacs.events.DeviceRemove`
+        * :class:`~tiny_pacs.events.AutoAddIdentity`
+
+    Device mutations are broadcast as :class:`~tiny_pacs.events.AuditRecord`
+    so an installed audit component records them.
     """
 
     config_model = DeviceStoreConfig
@@ -82,11 +85,11 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
         self.subscribe(events.DeviceByAE, self.device_by_ae)
         self.subscribe(events.Assoc, self.on_assoc)
         self.subscribe(events.Migrations, self.migrations)
-        self.subscribe(admin_events.DeviceList, self.device_list)
-        self.subscribe(admin_events.DeviceAdd, self.device_add)
-        self.subscribe(admin_events.DeviceUpdate, self.device_update)
-        self.subscribe(admin_events.DeviceRemove, self.device_remove)
-        self.subscribe(admin_events.AutoAddIdentity, self.auto_add_identity)
+        self.subscribe(events.DeviceList, self.device_list)
+        self.subscribe(events.DeviceAdd, self.device_add)
+        self.subscribe(events.DeviceUpdate, self.device_update)
+        self.subscribe(events.DeviceRemove, self.device_remove)
+        self.subscribe(events.AutoAddIdentity, self.auto_add_identity)
 
     def on_started(self) -> None:
         """Handles `OnStarted` event.
@@ -280,6 +283,8 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
                 raise ValueError(f'Device {aet} already exists')
             row = DeviceModel.create(created=now, updated=now, **fields)
         self.log_info('Added device %s', aet)
+        self._audit('device-add', aet, address=row.address, port=row.port,
+                    identity=row.identity)
         return row
 
     def device_update(self, payload: dict[str, Any]) -> DeviceModel:
@@ -313,6 +318,12 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
             row.updated = models._utcnow()
             row.save()
         self.log_info('Updated device %s', aet)
+        # Only the changed field names are recorded, never their values:
+        # the payload may carry credentials
+        self._audit('device-update', aet,
+                    fields=sorted(
+                        key for key in fields if key not in ('aet', 'extra')
+                    ))
         return row
 
     def device_remove(self, aet: str) -> bool:
@@ -328,6 +339,7 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
         )
         if deleted:
             self.log_info('Removed device %s', aet)
+            self._audit('device-remove', aet)
         return deleted
 
     def auto_add_identity(self, _: None = None) -> IdentityPolicy:
@@ -402,3 +414,22 @@ class DeviceStore(component.Component[DeviceStoreConfig]):
         :return: atomic transaction
         """
         return self.send_one(events.Atomic, None)
+
+    def _audit(self, event: str, aet: str, **details: Any) -> None:
+        """Broadcasts an audit record of a successful device mutation.
+
+        Fire-and-forget: listener failures never affect the mutation, and
+        no listener is required.
+
+        :param event: audit event name, e.g. ``device-add``
+        :type event: str
+        :param aet: AE title of the mutated device
+        :type aet: str
+        """
+        self.broadcast_nothrow(
+            events.AuditRecord,
+            events.AuditRecordPayload(
+                category='admin', event=event, device_aet=aet,
+                details=dict(details)
+            )
+        )

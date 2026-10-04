@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tiny_pacs_admin"
-version = "0.1.0"
+version = "0.1.1"
 description = "Admin CLI and DB-backed device registry for tiny_pacs"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
@@ -32,7 +32,7 @@ packages = [
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-tiny_pacs = ">=0.3,<0.4"
+tiny_pacs = ">=0.4,<0.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"
@@ -51,6 +51,7 @@ DeviceStore = "tiny_pacs_admin.store:DeviceStore"
 devices = "tiny_pacs_admin.cli:register_devices"
 components = "tiny_pacs_admin.cli:register_components"
 db = "tiny_pacs_admin.cli:register_db"
+storage = "tiny_pacs_admin.cli:register_storage"
 
 [tool.ruff]
 target-version = "py310"

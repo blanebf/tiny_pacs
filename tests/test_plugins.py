@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml  # type: ignore[import-untyped]
 from pynetdicom2 import pdu, userdataitems
 
 from tiny_pacs import __main__ as cli
@@ -18,6 +19,18 @@ COMPONENT_SRC = (
     '\n'
     'class FakeComponent(component.Component[component.ComponentConfig]):\n'
     '    pass\n'
+)
+
+REQUIRED_CONFIG_SRC = (
+    'from tiny_pacs import component\n'
+    '\n'
+    '\n'
+    'class RequiredConfig(component.ComponentConfig):\n'
+    '    secret: str\n'
+    '\n'
+    '\n'
+    'class RequiredComponent(component.Component[RequiredConfig]):\n'
+    '    config_model = RequiredConfig\n'
 )
 
 CLI_SRC = (
@@ -214,6 +227,45 @@ def test_register_component_overrides_plugin(
     config.register_component('Fake', Local)
     assert config.COMPONENT_REGISTRY['Fake'] is Local
     assert config.get_component_origin('Fake') == 'registered'
+
+
+def test_extension_component_defaults(
+        install_plugin: Callable[..., str], fresh_registry: None) -> None:
+    install_plugin('fake-ext', COMPONENT_SRC,
+                   components={'Fake': 'FakeComponent'})
+    defaults = config.extension_component_defaults()
+    assert 'Fake' in defaults
+    assert defaults['Fake'].on is False
+    # Built-ins are never part of the extension defaults, whether or not
+    # they are enabled by DEFAULT_COMPONENTS
+    assert all(config.get_component_origin(name) != 'built-in'
+               for name in defaults)
+    assert 'Database' not in defaults
+    assert 'HttpServer' not in defaults
+
+
+def test_extension_component_defaults_skips_required_fields(
+        install_plugin: Callable[..., str], fresh_registry: None,
+        caplog: pytest.LogCaptureFixture) -> None:
+    install_plugin('req-ext', REQUIRED_CONFIG_SRC,
+                   components={'Required': 'RequiredComponent'})
+    with caplog.at_level(logging.WARNING, logger='tiny_pacs.config'):
+        defaults = config.extension_component_defaults()
+    assert 'Required' not in defaults
+    messages = [record.getMessage() for record in caplog.records]
+    assert any('Required' in message for message in messages)
+
+
+def test_config_command_generate_includes_extensions(
+        install_plugin: Callable[..., str], fresh_registry: None,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    install_plugin('fake-ext', COMPONENT_SRC,
+                   components={'Fake': 'FakeComponent'})
+    cli.config_command(cli.parse_args(['config']))
+    data = yaml.safe_load(capsys.readouterr().out)
+    # Built-in defaults keep their enabled state, extensions are off
+    assert data['components']['Database']['on'] is True
+    assert data['components']['Fake']['on'] is False
 
 
 def test_cli_entry_point_registration(

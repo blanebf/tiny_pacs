@@ -3,8 +3,8 @@ Administration: ``tiny-pacs-admin``
 
 ``tiny-pacs-admin`` is the first-party administration extension. It keeps
 remote DICOM devices in the database and administers them — together with
-the component registry and the database itself — from the command line,
-fully offline.
+the component registry, the database itself and the storage maintenance
+operations — from the command line, fully offline.
 
 Installing ``tiny-pacs-admin`` never changes server behaviour: the
 ``DeviceStore`` component stays disabled until enabled in the
@@ -124,6 +124,12 @@ error:
         db_name: pacs.db
         mode: rwc
 
+Every command therefore needs that configuration passed to it. The
+examples below omit the flag for brevity: either append
+``-c /path/to/config.yaml`` explicitly, or run the commands through the
+configuration folder's launcher scripts (``./cli.sh`` / ``cli.cmd``, see
+:doc:`configuration`), which append it automatically.
+
 Devices
 ^^^^^^^
 
@@ -161,7 +167,8 @@ connectivity with a C-ECHO:
     tiny-pacs devices remove MRI_02
     tiny-pacs devices echo MRI_01
 
-Every subcommand accepts the shared ``-c/--config`` flags:
+Every subcommand accepts the shared ``-c/--config`` flags; the launcher
+scripts of a configuration folder pass them automatically:
 
 .. code-block:: bash
 
@@ -230,6 +237,185 @@ This is plain ``tiny_pacs`` functionality, not an extension command —
 the ``config`` subcommand is reserved and cannot be provided by
 extensions.
 
+Storage maintenance
+-------------------
+
+The ``storage`` subcommands answer the core storage maintenance events
+(:class:`~tiny_pacs.events.StorageStatsQuery`,
+:class:`~tiny_pacs.events.StorageVerifyQuery` and
+:class:`~tiny_pacs.events.StorageCleanupCommand`) with the storage
+component from the configuration, instantiated headless through the
+admin runtime. The headless bus starts the ``Database`` component and
+the enabled storage components *only* — other components (device
+registries, user stores) are never started, so these commands perform
+no startup writes of their own beyond creating/migrating the storage
+tables. They operate on record bookkeeping (the ``StorageFiles`` table)
+and, for file-backed storage (``FileStorage``), on the files in the
+storage directory. All of them accept the shared ``-c/--config``
+flags, and a configuration without any enabled storage component fails
+with a friendly error.
+
+Statistics
+^^^^^^^^^^
+
+Show record totals split by stored/failed, the oldest and newest record
+and — for a file backend — the file count, total bytes and the sizes of
+the ``%Y%m%d`` day folders:
+
+.. code-block:: bash
+
+    tiny-pacs storage stats
+    tiny-pacs storage stats --format json
+    tiny-pacs storage stats --format yaml
+
+The optional ``--quota GB`` flag is monitoring-script friendly: the
+report is printed as usual, but the command exits with status **2**
+when the disk usage exceeds the quota:
+
+.. code-block:: bash
+
+    tiny-pacs storage stats --quota 500 || alert "PACS storage over quota"
+
+``--quota`` needs a file-backed storage component; with a backend that
+has no directory (``InMemoryStorage``, ``TempFileStorage``) the command
+exits non-zero with an explanatory error.
+
+Verification
+^^^^^^^^^^^^
+
+The two-sided consistency check between database records and the files
+on disk classifies:
+
+* **missing files** — records whose file no longer exists;
+* **orphan files** — files under the storage directory that no record
+  references;
+* **stuck records** — records with ``is_stored == False`` (a store that
+  failed or a process that died mid-store).
+
+.. code-block:: bash
+
+    tiny-pacs storage verify
+    tiny-pacs storage verify --format json
+
+Without a file backend, ``verify`` degrades to the consistency report
+of the database records (stuck records only).
+
+Destructive follow-ups are double-gated opt-ins:
+``--delete-missing-records`` and ``--delete-orphans`` select what may
+go, and nothing is deleted until ``--apply`` is added — the default is
+a dry run that only reports the counts:
+
+.. code-block:: bash
+
+    tiny-pacs storage verify --delete-orphans           # dry run
+    tiny-pacs storage verify --delete-orphans --apply   # really delete
+
+Both flags need a file-backed storage component; orphan deletion is
+additionally gated inside the storage component so files newer than a
+short grace window (an in-flight C-STORE creates the file before its
+record) are never removed.
+
+Cleanup
+^^^^^^^
+
+``cleanup`` removes stuck in-progress records older than
+``--older-than DAYS`` together with their files when they exist on
+disk:
+
+.. code-block:: bash
+
+    tiny-pacs storage cleanup --older-than 7            # dry run
+    tiny-pacs storage cleanup --older-than 7 --apply
+
+Safety rails:
+
+* ``--older-than 0`` is refused — a running server may legitimately
+  have in-progress stores; the recommended minimum is 1 day;
+* an ``--apply`` run warns on stderr when it detects recent store
+  activity (a best-effort hint that the server may be live);
+* dry run is the default (``--dry-run`` and ``--apply`` are mutually
+  exclusive);
+* applied cleanups are broadcast as
+  :class:`~tiny_pacs.events.AuditRecord` (category ``storage``) by the
+  storage component, so an audit extension records what was deleted.
+
+Crash-recovery runbook
+^^^^^^^^^^^^^^^^^^^^^^
+
+``FileStorage`` normally removes the leftovers of a failed store
+itself; a crash *between* creating the file and reporting the store
+result leaves a stuck record (and possibly the file) behind. To heal
+such a storage:
+
+1. Stop the server (recommended for the destructive steps; see below
+   for what is safe on a live system).
+2. Inspect the damage:
+
+   .. code-block:: bash
+
+       tiny-pacs storage verify -c /etc/tiny_pacs/config.yaml
+
+   Stuck records are listed with their SOP Instance UIDs.
+
+3. Preview the cleanup with a generous threshold (dry run is the
+   default):
+
+   .. code-block:: bash
+
+       tiny-pacs storage cleanup --older-than 1 -c /etc/tiny_pacs/config.yaml
+
+4. Apply it and re-verify:
+
+   .. code-block:: bash
+
+       tiny-pacs storage cleanup --older-than 1 --apply -c /etc/tiny_pacs/config.yaml
+       tiny-pacs storage verify -c /etc/tiny_pacs/config.yaml
+
+5. If the crash also left orphan files (files without any record — for
+   example from a partially written rename), remove them explicitly:
+
+   .. code-block:: bash
+
+       tiny-pacs storage verify --delete-orphans -c /etc/tiny_pacs/config.yaml
+       tiny-pacs storage verify --delete-orphans --apply -c /etc/tiny_pacs/config.yaml
+
+Records with missing files (the file was deleted but the record
+remains) are removed the same way with ``--delete-missing-records``.
+
+.. warning::
+
+   Missing/orphan classification is relative to the storage directory
+   the *command* resolves from the configuration — with a relative
+   ``storage_dir`` it depends on the working directory the command runs
+   from, so run these commands from the server's working directory or
+   (better) configure an absolute ``storage_dir``. A misresolved
+   directory reports *every* record as missing; before applying
+   ``--delete-missing-records``, always compare the dry-run count
+   against the record total from ``storage stats`` — a missing count
+   near the total indicates a misresolved directory (or a lost storage
+   volume), not routine damage.
+
+Running against a live server
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The commands run headless against the same database the server may be
+using:
+
+* **PostgreSQL**: safe to run against a live server (transactional,
+  pooled connections).
+* **SQLite**: the ``stats``/``verify`` queries are read-only, but the
+  headless bus still creates/migrates the storage tables on first run;
+  destructive commands (``cleanup --apply``, ``verify --delete-*
+  --apply``) against a busy live database can hit write locks. There is
+  no retry in the deletion paths: lock contention is reported as errors
+  with a non-zero exit, and by then part of the cleanup may already be
+  committed — run destructive commands with the server stopped.
+* Files being written *right now* may be misreported as orphans while
+  an incoming store is in flight; the storage component refuses to
+  delete files inside the grace window, but the double gate
+  (``--delete-orphans`` **and** ``--apply``) exists precisely because
+  of this race.
+
 Reference implementation
 ------------------------
 
@@ -237,4 +423,5 @@ Reference implementation
 extension contract described in :doc:`extensions`: a component published
 through ``tiny_pacs.components`` (with its own tables and
 :class:`~tiny_pacs.events.Migrations`), CLI subcommands published through
-``tiny_pacs.cli``, and the headless admin runtime used by all of them.
+``tiny_pacs.cli``, and the headless admin runtime
+(:func:`tiny_pacs.admin.admin_context`) used by all of them.

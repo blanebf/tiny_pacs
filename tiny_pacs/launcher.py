@@ -1,0 +1,220 @@
+"""Launcher script generation.
+
+``tiny-pacs config --launcher`` writes two small helper scripts next to
+the generated configuration: :data:`POSIX_SCRIPT` (``cli.sh``) for POSIX
+shells and :data:`WINDOWS_SCRIPT` (``cli.cmd``) for the Windows command
+prompt. Both scripts change into their own folder first — so relative
+paths in the configuration (database, storage, logs) resolve next to it
+— and forward every argument to tiny-pacs with ``-c <config>`` appended:
+
+.. code-block:: bash
+
+    ./cli.sh run             # start the server
+    ./cli.sh config show     # dump the effective configuration
+    ./cli.sh users list      # extension subcommands work too
+
+On Windows the same calls go through ``cli.cmd``.
+
+The scripts prefer the interpreter that generated them
+(:data:`sys.executable`, which is guaranteed to have tiny_pacs
+installed) and fall back to ``tiny-pacs`` on the ``PATH`` when that
+interpreter is gone (e.g. the folder was copied to another machine), so
+a generated folder runs any subcommand without activating an
+environment. Both files are written on every platform, keeping a
+configuration folder portable between POSIX systems and Windows.
+
+The folder configuration is appended after the forwarded arguments and
+``-c`` takes the last occurrence, so a ``-c`` passed to the script
+itself is superseded by the folder's configuration.
+
+Interpolated values are verified before rendering
+(:func:`validate_script_inputs`): characters that could escape the
+scripts' quoting (``"``, cmd.exe metacharacters) or inject lines
+(control characters) are rejected with a :class:`ValueError`, so a
+generated script can never carry commands its generator did not write.
+"""
+import os
+import shlex
+import sys
+from pathlib import Path
+
+#: File name of the generated POSIX shell script
+POSIX_SCRIPT = 'cli.sh'
+
+#: File name of the generated Windows batch script
+WINDOWS_SCRIPT = 'cli.cmd'
+
+#: Characters that cannot be interpolated into the generated scripts:
+#: the batch quoting form (they could close it and start command
+#: separators or redirections), the cmd.exe expansion character and the
+#: cmd.exe escape character. Control characters (e.g. newlines) are
+#: rejected separately through :meth:`str.isprintable`, because they
+#: would inject lines into either template. The POSIX renderer enforces
+#: the same rule set for uniformity, although :func:`shlex.quote`
+#: already neutralizes them on its functional lines.
+FORBIDDEN_INPUT_CHARS = frozenset('"%&|<>^')
+
+
+def validate_script_inputs(config_name: str, python: str) -> None:
+    """Validates values interpolated into the launcher scripts.
+
+    The configuration name and the recorded interpreter path end up
+    inside the generated shell and batch scripts (functional lines and
+    comments). Values containing characters from
+    :data:`FORBIDDEN_INPUT_CHARS` or non-printable (control) characters
+    are rejected; the empty interpreter path is accepted, it selects the
+    ``tiny-pacs``-on-``PATH`` mode of the scripts.
+
+    :param config_name: configuration file name passed via ``-c``
+    :type config_name: str
+    :param python: interpreter recorded in the scripts
+    :type python: str
+    :raises ValueError: raised when a value contains a character that
+                        cannot be embedded into the generated scripts
+    """
+    for what, value in (('configuration name', config_name),
+                        ('interpreter path', python)):
+        if not value.isprintable():
+            raise ValueError(
+                f'the {what} {value!r} contains control characters and '
+                'cannot be embedded into the generated launcher scripts'
+            )
+        bad = sorted(set(value) & FORBIDDEN_INPUT_CHARS)
+        if bad:
+            raise ValueError(
+                f'the {what} {value!r} contains characters that cannot '
+                'be embedded into the generated launcher scripts: '
+                + ' '.join(repr(character) for character in bad)
+            )
+
+
+def render_posix(config_name: str, python: str) -> str:
+    """Renders the POSIX shell launcher script.
+
+    Both interpolated values are quoted with :func:`shlex.quote`, so
+    configuration names and interpreter paths containing spaces or
+    shell metacharacters stay literal.
+
+    :param config_name: configuration file name (relative to the folder
+                        the script lives in) passed via ``-c``
+    :type config_name: str
+    :param python: interpreter running ``-m tiny_pacs``; the script
+                   falls back to ``tiny-pacs`` on the ``PATH`` when it
+                   is empty or not executable
+    :type python: str
+    :return: script content with LF line endings
+    :rtype: str
+    :raises ValueError: raised by :func:`validate_script_inputs`
+    """
+    validate_script_inputs(config_name, python)
+    quoted_python = shlex.quote(python)
+    quoted_config = shlex.quote(config_name)
+    return f'''#!/usr/bin/env bash
+# Generated by "tiny-pacs config --launcher"; regenerate instead of
+# editing. Runs tiny-pacs subcommands against the configuration in this
+# folder:
+#   ./cli.sh run             # start the server
+#   ./cli.sh config show     # dump the effective configuration
+# Changes into this folder first so relative paths (DB, storage, logs)
+# resolve next to this script, and appends "-c {config_name}".
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+PYTHON={quoted_python}
+if [ -x "$PYTHON" ]; then
+    exec "$PYTHON" -m tiny_pacs "$@" -c {quoted_config}
+fi
+exec tiny-pacs "$@" -c {quoted_config}
+'''
+
+
+def render_windows(config_name: str, python: str) -> str:
+    """Renders the Windows batch launcher script.
+
+    Same contract as :func:`render_posix`. The script sticks to plain
+    line-by-line batch (``goto`` instead of parenthesized blocks) so
+    arguments containing parentheses are forwarded verbatim through
+    ``%*``, and it enters its folder with ``pushd`` (which maps a
+    temporary drive letter for UNC paths, where ``cd`` fails); the
+    wrapped command's exit status is captured before the cleanup so it
+    survives ``popd``/``endlocal``.
+
+    :param config_name: configuration file name (relative to the folder
+                        the script lives in) passed via ``-c``
+    :type config_name: str
+    :param python: interpreter running ``-m tiny_pacs``; the script
+                   falls back to ``tiny-pacs`` on the ``PATH`` when the
+                   file does not exist
+    :type python: str
+    :return: script content with LF line endings; :func:`write_scripts`
+             translates them to CRLF when writing the file
+    :rtype: str
+    :raises ValueError: raised by :func:`validate_script_inputs`
+    """
+    validate_script_inputs(config_name, python)
+    return f'''@echo off
+rem Generated by "tiny-pacs config --launcher"; regenerate instead of
+rem editing. Runs tiny-pacs subcommands against the configuration in
+rem this folder:
+rem   cli.cmd run             - start the server
+rem   cli.cmd config show     - dump the effective configuration
+rem Changes into this folder first so relative paths (DB, storage,
+rem logs) resolve next to this script, and appends "-c {config_name}".
+setlocal
+pushd "%~dp0"
+if errorlevel 1 exit /b 1
+
+set "TINY_PACS_CONFIG={config_name}"
+set "TINY_PACS_PYTHON={python}"
+if not exist "%TINY_PACS_PYTHON%" goto on_path
+"%TINY_PACS_PYTHON%" -m tiny_pacs %* -c "%TINY_PACS_CONFIG%"
+goto done
+:on_path
+tiny-pacs %* -c "%TINY_PACS_CONFIG%"
+:done
+set "TINY_PACS_STATUS=%errorlevel%"
+popd
+endlocal & exit /b %TINY_PACS_STATUS%
+'''
+
+
+def write_scripts(
+        directory: str | os.PathLike[str],
+        config_name: str = 'config.yaml',
+        python: str | None = None
+) -> list[Path]:
+    """Writes the launcher scripts into a folder.
+
+    ``cli.sh`` is written with LF line endings and made executable
+    (mode ``0755``); ``cli.cmd`` is written with CRLF line endings, as
+    the Windows command prompt expects. Existing scripts are
+    overwritten, so regenerating a configuration with ``--launcher``
+    refreshes them. Invalid inputs are rejected up front, so a failure
+    never leaves a half-written pair behind.
+
+    :param directory: folder the scripts are written to
+    :type directory: str | os.PathLike[str]
+    :param config_name: configuration file name the scripts pass via
+                        ``-c``, relative to ``directory``; defaults to
+                        ``config.yaml``
+    :type config_name: str
+    :param python: interpreter recorded in the scripts; defaults to
+                   :data:`sys.executable`
+    :type python: str | None
+    :return: paths of the written scripts (``cli.sh`` first)
+    :rtype: list[Path]
+    :raises ValueError: raised by :func:`validate_script_inputs`
+    """
+    if python is None:
+        python = sys.executable
+    validate_script_inputs(config_name, python)
+    folder = Path(directory)
+    posix = folder / POSIX_SCRIPT
+    windows = folder / WINDOWS_SCRIPT
+    posix.write_text(render_posix(config_name, python), encoding='utf-8',
+                     newline='\n')
+    windows.write_text(render_windows(config_name, python),
+                       encoding='utf-8', newline='\r\n')
+    os.chmod(posix, 0o755)
+    return [posix, windows]

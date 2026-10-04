@@ -27,6 +27,9 @@ docs/api/generated/
 pacs.db
 *.log
 
+# Local manual debugging / testing
+local-debug/
+
 # Virtual environments
 .venv/
 venv/

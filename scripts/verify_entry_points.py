@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Verifies entry point discovery of the first-party extensions.
 
-Installs nothing; expects ``tiny_pacs``, ``tiny_pacs_admin`` and
-``tiny_pacs_identity`` to be installed into the current environment (the
-CI integration job installs the core and both extensions from the
+Installs nothing; expects ``tiny_pacs``, ``tiny_pacs_admin``,
+``tiny_pacs_identity``, ``tiny_pacs_audit``, ``tiny_pacs_admin_web`` and
+``tiny_pacs_dicomweb`` to be installed into the current environment (the
+CI integration job installs the core and the extensions from the
 repository). Checks both entry point groups end to end:
 
 * ``tiny_pacs.components`` — the extension components are discovered by
@@ -20,9 +21,14 @@ EXPECTED_COMPONENTS = {
     'DeviceStore': 'tiny_pacs_admin',
     'Users': 'tiny_pacs_identity',
     'UserIdentityAuth': 'tiny_pacs_identity',
+    'AuditLog': 'tiny_pacs_audit',
+    'AdminWeb': 'tiny_pacs_admin_web',
+    'DICOMWeb': 'tiny_pacs_dicomweb',
 }
 
-EXPECTED_SUBCOMMANDS = ('components', 'db', 'devices', 'users')
+EXPECTED_SUBCOMMANDS = (
+    'audit', 'components', 'db', 'devices', 'users', 'web-admin'
+)
 
 
 def check_components() -> list[str]:
