@@ -84,16 +84,17 @@ def config_command(args: argparse.Namespace) -> None:
 
     :param args: parsed ``config`` command arguments
     """
+    comments = not args.no_comments
     if args.action == 'show':
         if args.launcher:
             fail('--launcher is only supported by "config generate"')
         conf = config.Config()
         conf.update_config(args.config)
         if args.output:
-            config.write_yaml(conf, args.output)
+            config.write_yaml(conf, args.output, comments=comments)
             print(f'Configuration saved to {args.output}')
         else:
-            sys.stdout.write(config.dump_yaml(conf))
+            sys.stdout.write(config.dump_yaml(conf, comments=comments))
         return
     target = Path(args.output) if args.output else Path('config.yaml')
     if args.launcher:
@@ -111,10 +112,10 @@ def config_command(args: argparse.Namespace) -> None:
         front = interactive.TerminalFront()
         conf.update_config(front.run_questionnairies())
     if args.output:
-        config.write_yaml(conf, args.output)
+        config.write_yaml(conf, args.output, comments=comments)
         print(f'Configuration saved to {args.output}')
     else:
-        sys.stdout.write(config.dump_yaml(conf))
+        sys.stdout.write(config.dump_yaml(conf, comments=comments))
     if args.launcher:
         written = launcher.write_scripts(target.parent, target.name)
         # Without --output stdout carries the YAML itself and must stay
@@ -290,6 +291,11 @@ def build_parser(load_plugins: bool = True) -> argparse.ArgumentParser:
     config_parser.add_argument('-i', '--interactive', action='store_true',
                                help='Provide configuration values '
                                     'interactively')
+    config_parser.add_argument(
+        '--no-comments', action='store_true',
+        help='Do not generate explanatory comments; write the bare YAML '
+             'for machine consumers and minimal diffs'
+    )
     config_parser.add_argument(
         '--launcher', action='store_true',
         help='Also write launcher scripts (cli.sh for POSIX shells, '

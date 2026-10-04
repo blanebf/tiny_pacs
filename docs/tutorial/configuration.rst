@@ -191,6 +191,27 @@ Files written by ``tiny-pacs config`` are created with restrictive
 permissions (``0600``), because configurations may contain credentials such
 as the PostgreSQL password.
 
+Generated comments
+~~~~~~~~~~~~~~~~~~
+
+Generated files explain themselves: every component section opens with a
+comment derived from the component class docstring and its origin
+(built-in, or the installed extension providing it — extension components
+are introduced by a banner, as they are off by default), and every option
+carries the documentation of the configuration model (its ``:ivar:``
+entries or a Pydantic ``Field(description=...)``) plus machine-checked
+facts appended in parentheses — allowed enum values (``one of: sqlite,
+postgres``), numeric bounds (``0..65535``) and required/optional markers.
+The facts come from the models themselves, so they never drift; a test
+enforces that every field of every component configuration model keeps an
+``:ivar:`` entry or a field description. Secret-carrying fields (like the
+PostgreSQL password) additionally warn that they are stored in plain text.
+
+``tiny-pacs config show`` annotates the effective configuration the same
+way. Pass ``--no-comments`` to either action to write the bare YAML for
+machine consumers or minimal diffs. Comments are ignored when a
+configuration is loaded, so both variants work everywhere.
+
 Launcher scripts
 ~~~~~~~~~~~~~~~~
 

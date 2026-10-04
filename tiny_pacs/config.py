@@ -25,7 +25,7 @@ import yaml  # type: ignore[import-untyped]
 from pydicom import uid
 from pynetdicom2 import uids
 
-from . import component, db, devices, http, pacs, storage
+from . import component, config_comments, db, devices, http, pacs, storage
 
 ConfigInput: TypeAlias = str | list[str] | IO[bytes] | dict[str, Any]
 
@@ -449,7 +449,7 @@ class Config(pydantic.BaseModel):
             return json.load(fp)
 
 
-def dump_yaml(conf: Config) -> str:
+def dump_yaml(conf: Config, comments: bool = True) -> str:
     """Serializes a configuration into a YAML document.
 
     The output contains the effective configuration with all the default
@@ -457,8 +457,18 @@ def dump_yaml(conf: Config) -> str:
     with :meth:`Config.update_config` or via the ``-c`` command-line
     option.
 
+    With ``comments`` (the default) the document is annotated by
+    :mod:`tiny_pacs.config_comments`: a banner, per-section and
+    per-component comments derived from the component and configuration
+    model docstrings, and machine-checked facts (enum values, numeric
+    bounds, required fields). Comments are ignored by ``yaml.safe_load``,
+    so the round-trip is unaffected; ``comments=False`` keeps the plain
+    dump for machine consumers.
+
     :param conf: configuration to serialize
     :type conf: Config
+    :param comments: generate explanatory comments, defaults to True
+    :type comments: bool
     :return: YAML representation of the configuration
     :rtype: str
     """
@@ -476,10 +486,14 @@ def dump_yaml(conf: Config) -> str:
     text: str = yaml.safe_dump(
         data, sort_keys=False, default_flow_style=False
     )
-    return text
+    if not comments:
+        return text
+    return config_comments.render_commented_yaml(
+        conf, text, COMPONENT_REGISTRY, COMPONENT_ORIGINS
+    )
 
 
-def write_yaml(conf: Config, file_name: str) -> None:
+def write_yaml(conf: Config, file_name: str, comments: bool = True) -> None:
     """Writes a configuration to a file readable only by its owner.
 
     Configurations may contain credentials (e.g. the PostgreSQL password),
@@ -489,7 +503,9 @@ def write_yaml(conf: Config, file_name: str) -> None:
     :type conf: Config
     :param file_name: name of the file to write
     :type file_name: str
+    :param comments: generate explanatory comments, defaults to True
+    :type comments: bool
     """
     fd = os.open(file_name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w') as fp:
-        fp.write(dump_yaml(conf))
+        fp.write(dump_yaml(conf, comments=comments))
