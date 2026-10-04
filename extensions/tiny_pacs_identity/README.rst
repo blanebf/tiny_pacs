@@ -23,7 +23,7 @@ What it provides
   as command line arguments.
 
 It depends on the core only: the per-device identity policy vocabulary
-(:class:`tiny_pacs.identity.IdentityPolicy`) and the user management
+(``tiny_pacs.identity.IdentityPolicy``) and the user management
 events live in ``tiny_pacs``, and device registries are reached through
 the core device events.
 

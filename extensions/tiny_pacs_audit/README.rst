@@ -21,7 +21,7 @@ What it provides
 It depends on the core only: attribution comes from the core association
 context and the ``session`` field of the service payloads, and
 administrative actions arrive through the core
-:class:`~tiny_pacs.events.AuditRecord` event emitted by whatever component
+``AuditRecord`` event emitted by whatever component
 performs the mutation — the audit extension never imports the admin or
 identity packages.
 
