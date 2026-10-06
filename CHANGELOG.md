@@ -13,6 +13,22 @@ Breaking changes land in a new minor series and are announced here together
 with a migration note. Extensions pin the series they target, e.g.
 `tiny_pacs >=0.4,<0.5`.
 
+## 0.4.1
+
+- Fix: `tiny-pacs config generate` now pre-populates every built-in
+  component with its defaults (disabled), matching how it already included
+  all available extension components. Previously only the
+  `DEFAULT_COMPONENTS` (`Database`, `Devices`, `PACS`, `InMemoryStorage`)
+  were written, so the remaining built-ins (`HttpServer`, `FileStorage`,
+  `TempFileStorage`) were absent from the generated file and had to be added
+  by hand to enable them; they are now listed with `on: false`, so enabling
+  any component is a matter of flipping the flag. New helpers
+  `config.builtin_component_defaults()` (the built-in counterpart of
+  `config.extension_component_defaults()`) and `config.generated_config()`
+  (the exact configuration the `generate` action writes). `config show` is
+  unchanged: it keeps dumping the effective configuration loaded from
+  `-c/--config` over the `DEFAULT_COMPONENTS` base.
+
 ## 0.4.0
 
 *Version note: the `0.3.0` string was consumed on PyPI on 2026-09-01 by an

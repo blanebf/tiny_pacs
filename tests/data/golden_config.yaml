@@ -152,3 +152,59 @@ components:
     # an overwrite), so this is intended for re-pushing the same instance
     # rather than editing its indexed attributes.
     overwrite: false
+
+  # Component serving every contributed WSGI application. (built-in)
+  HttpServer:
+    # whether the component is enabled. Components are skipped unless on is
+    # true, so the default is false: an entry that omits on does not enable
+    # the component. The built-in default components set on explicitly (see
+    # tiny_pacs.config.DEFAULT_COMPONENTS).
+    'on': false
+    # bind address; non-loopback binds are refused at config validation
+    # unless allow_remote is true
+    host: 127.0.0.1
+    # bind port; 0 selects an ephemeral port (reported at startup through
+    # HttpServer.web_port) (0..65535)
+    port: 11113
+    # the single waitress worker pool serving every mounted front-end (>=1)
+    threads: 16
+    # permits binding a non-loopback address; such a deployment logs a loud
+    # WARNING at startup
+    allow_remote: false
+
+  # Simple file storage implementation. Stores incoming datasets in a
+  # provided folder. If specific folder is not provided in the component
+  # configuration, temporary one is created. (built-in)
+  FileStorage:
+    # whether the component is enabled. Components are skipped unless on is
+    # true, so the default is false: an entry that omits on does not enable
+    # the component. The built-in default components set on explicitly (see
+    # tiny_pacs.config.DEFAULT_COMPONENTS).
+    'on': false
+    # inherited from StorageConfig; replace instances that are already
+    # stored instead of refusing the store
+    overwrite: false
+    # directory for stored files; a temporary directory is created and
+    # removed on shutdown when not provided (optional)
+    storage_dir: null
+
+  # Simple storage component that uses temporary files to store incoming
+  # dataset. (built-in)
+  TempFileStorage:
+    # whether the component is enabled. Components are skipped unless on is
+    # true, so the default is false: an entry that omits on does not enable
+    # the component. The built-in default components set on explicitly (see
+    # tiny_pacs.config.DEFAULT_COMPONENTS).
+    'on': false
+    # when true an incoming C-STORE whose SOP Instance UID is already stored
+    # replaces the existing instance; when false (the default) such a store
+    # is refused with a failure status and the already-stored instance is
+    # left untouched. A replacement is only destructive once it succeeded:
+    # the stored copy is kept until the incoming dataset is fully stored,
+    # and a failed replacement rolls the record back to it. Overwriting
+    # replaces the stored dataset and its storage record only; the PACS
+    # catalogue keeps the attributes it recorded on the first store of that
+    # SOP Instance UID (the archive is keyed by UID, which is unchanged by
+    # an overwrite), so this is intended for re-pushing the same instance
+    # rather than editing its indexed attributes.
+    overwrite: false

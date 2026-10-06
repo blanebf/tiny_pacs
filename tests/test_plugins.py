@@ -242,6 +242,8 @@ def test_extension_component_defaults(
                for name in defaults)
     assert 'Database' not in defaults
     assert 'HttpServer' not in defaults
+    # Symmetrically, the extension is never part of the built-in defaults
+    assert 'Fake' not in config.builtin_component_defaults()
 
 
 def test_extension_component_defaults_skips_required_fields(

@@ -147,12 +147,18 @@ def test_config_command_prints_defaults(
     default = config.Config()
     assert data['ae'] == default.ae.model_dump()
     assert data['log'] == default.log
-    # Generated configurations contain the built-in defaults plus every
-    # available extension component, disabled by default
+    # Generated configurations contain every registered component: the
+    # DEFAULT_COMPONENTS enabled, every other built-in and every available
+    # extension component disabled by default
+    builtins = config.builtin_component_defaults()
     extensions = config.extension_component_defaults()
     assert set(data['components']) == (set(config.DEFAULT_COMPONENTS)
-                                       | set(extensions))
-    for name in extensions:
+                                       | set(builtins) | set(extensions))
+    for name in config.DEFAULT_COMPONENTS:
+        assert data['components'][name]['on'] is True
+    disabled = ((set(builtins) | set(extensions))
+                - set(config.DEFAULT_COMPONENTS))
+    for name in disabled:
         assert data['components'][name]['on'] is False
 
 

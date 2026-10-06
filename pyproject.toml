@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tiny_pacs"
-version = "0.4.0"
+version = "0.4.1"
 description = "A small pure-Python PACS (Picture Archiving and Communication System)"
 authors = ["Pavel 'Blane' Tuchin <blane.public@gmail.com>"]
 license = "MIT"
