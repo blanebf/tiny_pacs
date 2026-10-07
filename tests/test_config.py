@@ -198,3 +198,28 @@ def test_register_component() -> None:
         assert extra.option == 'y'
     finally:
         del config.COMPONENT_REGISTRY['_ExtraComponent']
+
+
+def test_builtin_component_defaults_covers_every_builtin() -> None:
+    # Built-in components that are not part of DEFAULT_COMPONENTS are still
+    # presented (disabled), so a generated configuration exposes HttpServer,
+    # FileStorage and TempFileStorage, not only the enabled defaults.
+    config.load_component_plugins()
+    defaults = config.builtin_component_defaults()
+    builtins = {name for name in config.COMPONENT_REGISTRY
+                if config.get_component_origin(name) == 'built-in'}
+    assert set(defaults) == builtins
+    assert {'HttpServer', 'FileStorage', 'TempFileStorage'} <= set(defaults)
+    for entry in defaults.values():
+        assert entry.on is False
+
+
+def test_generated_config_enables_only_defaults() -> None:
+    config.load_component_plugins()
+    conf = config.generated_config()
+    assert set(conf.components) == (
+        set(config.DEFAULT_COMPONENTS)
+        | set(config.builtin_component_defaults())
+        | set(config.extension_component_defaults()))
+    for name, entry in conf.components.items():
+        assert entry.on is (name in config.DEFAULT_COMPONENTS), name

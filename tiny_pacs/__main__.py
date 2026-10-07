@@ -69,11 +69,13 @@ def config_command(args: argparse.Namespace) -> None:
 
     Without ``--interactive`` the effective default configuration is
     written; with ``--interactive`` every configuration value is asked
-    on the terminal first. Generated configurations also contain every
-    available extension component with its defaults (off), so enabling an
-    extension is a matter of flipping ``on``. The ``show`` action loads
-    the configuration from ``-c/--config`` and dumps the effective result
-    (defaults merged with the loaded sources).
+    on the terminal first. Generated configurations contain every
+    available component with its defaults — the built-in
+    :data:`~tiny_pacs.config.DEFAULT_COMPONENTS` stay enabled, while all
+    other built-ins and all extensions are present but disabled — so
+    enabling any component is a matter of flipping ``on``. The ``show``
+    action loads the configuration from ``-c/--config`` and dumps the
+    effective result (defaults merged with the loaded sources).
 
     ``generate --launcher`` additionally writes the launcher scripts (see
     :mod:`tiny_pacs.launcher`) next to the configuration, so the folder
@@ -105,9 +107,7 @@ def config_command(args: argparse.Namespace) -> None:
             launcher.validate_script_inputs(target.name, sys.executable)
         except ValueError as exc:
             fail(str(exc))
-    conf = config.Config()
-    for name, extension_conf in config.extension_component_defaults().items():
-        conf.components.setdefault(name, extension_conf)
+    conf = config.generated_config()
     if args.interactive:
         front = interactive.TerminalFront()
         conf.update_config(front.run_questionnairies())

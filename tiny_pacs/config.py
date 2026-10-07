@@ -267,6 +267,65 @@ def _default_components() -> dict[str, component.ComponentConfig]:
     return _validate_component_configs(DEFAULT_COMPONENTS, {})
 
 
+def _component_defaults(
+        builtins: bool
+) -> dict[str, component.ComponentConfig]:
+    """Default configurations of the built-in or the extension components.
+
+    Shared implementation of :func:`builtin_component_defaults` and
+    :func:`extension_component_defaults`: every registered component whose
+    origin matches ``builtins`` is returned with the defaults of its own
+    configuration model, which keep the component disabled (``on`` defaults
+    to false). A component whose configuration model has required fields
+    (no defaults) cannot be constructed from an empty configuration; such a
+    component is logged and skipped.
+
+    :param builtins: select the built-in components when true, the
+                     extension components (entry-point plugins or
+                     programmatic registrations) when false
+    :type builtins: bool
+    :return: component name to default configuration
+    :rtype: dict[str, component.ComponentConfig]
+    """
+    load_component_plugins()
+    logger = logging.getLogger('tiny_pacs.config')
+    result: dict[str, component.ComponentConfig] = {}
+    for name, factory in COMPONENT_REGISTRY.items():
+        if (get_component_origin(name) == 'built-in') != builtins:
+            continue
+        try:
+            result[name] = factory.config_model.model_validate({})
+        except pydantic.ValidationError:
+            logger.warning(
+                'Component %r requires configuration fields without '
+                'defaults, it cannot be pre-populated in a generated '
+                'configuration', name
+            )
+    return result
+
+
+def builtin_component_defaults() -> dict[str, component.ComponentConfig]:
+    """Default configurations of the built-in components.
+
+    Every built-in component (see :data:`COMPONENT_ORIGINS`) is returned
+    with the defaults of its own configuration model, which keep the
+    component disabled (``on`` defaults to false). The components enabled
+    out of the box are listed in :data:`DEFAULT_COMPONENTS`; config
+    generation starts from a :class:`Config` (which enables those) and
+    merges these defaults with ``setdefault`` (see
+    :func:`generated_config`), so the :data:`DEFAULT_COMPONENTS` keep
+    their enabled state while the remaining built-ins — ``HttpServer``,
+    ``FileStorage``, ``TempFileStorage`` and any future additions — are
+    presented disabled. A built-in whose configuration model has required
+    fields (no defaults) is logged and skipped.
+
+    :return: component name to default configuration of every built-in
+             component
+    :rtype: dict[str, component.ComponentConfig]
+    """
+    return _component_defaults(builtins=True)
+
+
 def extension_component_defaults() -> dict[str, component.ComponentConfig]:
     """Default configurations of the available extension components.
 
@@ -283,21 +342,7 @@ def extension_component_defaults() -> dict[str, component.ComponentConfig]:
              extension component
     :rtype: dict[str, component.ComponentConfig]
     """
-    load_component_plugins()
-    logger = logging.getLogger('tiny_pacs.config')
-    result: dict[str, component.ComponentConfig] = {}
-    for name, factory in COMPONENT_REGISTRY.items():
-        if get_component_origin(name) == 'built-in':
-            continue
-        try:
-            result[name] = factory.config_model.model_validate({})
-        except pydantic.ValidationError:
-            logger.warning(
-                'Component %r requires configuration fields without '
-                'defaults, it cannot be pre-populated in a generated '
-                'configuration', name
-            )
-    return result
+    return _component_defaults(builtins=False)
 
 
 def _validate_component_configs(
@@ -447,6 +492,33 @@ class Config(pydantic.BaseModel):
     def _read_json(file_name: str) -> Any:
         with open(file_name) as fp:
             return json.load(fp)
+
+
+def generated_config() -> Config:
+    """Builds the configuration written by ``tiny-pacs config generate``.
+
+    Every registered component is present in the result: the
+    :data:`DEFAULT_COMPONENTS` keep the enabled state a plain
+    :class:`Config` gives them, while every other component — the
+    remaining built-ins (:func:`builtin_component_defaults`) and all
+    available extensions (:func:`extension_component_defaults`) — is
+    included with the defaults of its own configuration model, which keep
+    it disabled (``on`` defaults to false). Enabling any component is
+    therefore a matter of flipping ``on`` in the generated file. The
+    ``config generate`` command layers the interactive questionnaire
+    answers on top of this base when run with ``--interactive``; the
+    ``config show`` action keeps dumping the plain effective configuration
+    instead, so it is unaffected.
+
+    :return: configuration containing every available component
+    :rtype: Config
+    """
+    conf = Config()
+    for defaults in (builtin_component_defaults(),
+                     extension_component_defaults()):
+        for name, component_conf in defaults.items():
+            conf.components.setdefault(name, component_conf)
+    return conf
 
 
 def dump_yaml(conf: Config, comments: bool = True) -> str:

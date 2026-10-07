@@ -338,6 +338,10 @@ def test_golden_file(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         config, 'COMPONENT_ORIGINS', dict.fromkeys(registry, 'built-in'))
     monkeypatch.setattr(config, '_plugins_loaded', True)
-    conf = config.Config()
+    # ``generated_config`` is what ``tiny-pacs config generate`` writes, so
+    # the golden document also carries the built-in components that are not
+    # part of DEFAULT_COMPONENTS (HttpServer, FileStorage, TempFileStorage),
+    # disabled.
+    conf = config.generated_config()
     generated = config.dump_yaml(conf)
     assert generated == GOLDEN_FILE.read_text()
